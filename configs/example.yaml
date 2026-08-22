@@ -1,0 +1,56 @@
+# Example Axiom agent configuration. Copy to /etc/axiom/config.yaml and
+# adjust for your environment. See README.md for the full field reference.
+
+agent:
+  id: example-uat-01
+  name: Example UAT Agent
+  listen:
+    address: 0.0.0.0
+    port: 8443
+
+security:
+  mtls:
+    ca_file: /etc/axiom/certs/ca.crt
+    cert_file: /etc/axiom/certs/server.crt
+    key_file: /etc/axiom/certs/server.key
+  # health:
+  #   allow_anonymous: true   # off by default; opt in only if your network
+  #                           # health check cannot present a client cert.
+
+audit:
+  path: /var/log/axiom/audit.log
+
+actions:
+  backend.deploy:
+    command: /opt/axiom/actions/backend-deploy.sh
+    timeout: 10m
+    concurrency: exclusive
+    parameters:
+      image_tag:
+        type: string
+        pattern: '^[a-zA-Z0-9._-]{1,128}$'
+        required: true
+
+  backend.rollback:
+    command: /opt/axiom/actions/backend-rollback.sh
+    timeout: 10m
+    concurrency: exclusive
+    parameters:
+      image_tag:
+        type: string
+        pattern: '^[a-zA-Z0-9._-]{1,128}$'
+        required: true
+
+  service.restart:
+    command: /opt/axiom/actions/service-restart.sh
+    timeout: 2m
+    concurrency: shared
+
+authorization:
+  identities:
+    # The key must match the client certificate's Common Name exactly.
+    example-ci:
+      actions:
+        - backend.deploy
+        - backend.rollback
+        - service.restart

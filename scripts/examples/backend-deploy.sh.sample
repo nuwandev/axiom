@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Example action script for an action configured as:
+#
+#   backend.deploy:
+#     command: /opt/axiom/actions/backend-deploy.sh
+#     timeout: 10m
+#     concurrency: exclusive
+#     parameters:
+#       image_tag: { type: string, pattern: '^[a-zA-Z0-9._-]{1,128}$', required: true }
+#
+# Axiom passes declared parameters as AXIOM_PARAM_<NAME> environment
+# variables (never as shell text), and always sets AXIOM_JOB_ID/AXIOM_ACTION.
+#
+# Install this at the exact path referenced by `command:`, owned by root
+# (or the account Axiom runs as) with mode 0750 (no group/world write) —
+# Axiom refuses to start if that isn't true.
+set -euo pipefail
+
+: "${AXIOM_PARAM_IMAGE_TAG:?AXIOM_PARAM_IMAGE_TAG is required}"
+
+COMPOSE_FILE=/opt/example-app/docker-compose.backend.yml
+ENV_FILE=/opt/example-app/.env
+
+IMAGE_TAG="$AXIOM_PARAM_IMAGE_TAG" docker compose \
+  -f "$COMPOSE_FILE" \
+  --env-file "$ENV_FILE" \
+  pull
+
+IMAGE_TAG="$AXIOM_PARAM_IMAGE_TAG" docker compose \
+  -f "$COMPOSE_FILE" \
+  --env-file "$ENV_FILE" \
+  up -d
+
+# Real validation, not just "the launch command exited 0": wait for the
+# service to report healthy before this script (and therefore the job)
+# reports success.
+for i in $(seq 1 30); do
+  if docker compose -f "$COMPOSE_FILE" ps --status running | grep -q backend; then
+    echo "backend is running"
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "backend did not become healthy in time" >&2
+exit 1

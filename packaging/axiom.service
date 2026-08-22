@@ -1,0 +1,26 @@
+[Unit]
+Description=Axiom automation agent
+After=network.target
+Documentation=https://example.invalid/axiom
+
+[Service]
+Type=simple
+User=axiom
+Group=axiom
+ExecStart=/usr/local/bin/axiom -config /etc/axiom/config.yaml
+Restart=on-failure
+RestartSec=5s
+
+# Least-privilege hardening. Axiom itself only needs to read its config and
+# certs, execute configured action scripts, and write its audit log — it
+# does not need to write anywhere else on the filesystem.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/axiom
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
