@@ -35,15 +35,15 @@ type Spec struct {
 
 // Result is the outcome of a completed (or killed) execution.
 type Result struct {
-	ExitCode         int
-	Stdout           []byte
-	Stderr           []byte
-	StdoutTruncated  bool
-	StderrTruncated  bool
-	TimedOut         bool
-	Cancelled        bool
-	StartedAt        time.Time
-	FinishedAt       time.Time
+	ExitCode        int
+	Stdout          []byte
+	Stderr          []byte
+	StdoutTruncated bool
+	StderrTruncated bool
+	TimedOut        bool
+	Cancelled       bool
+	StartedAt       time.Time
+	FinishedAt      time.Time
 }
 
 // Duration is the wall-clock execution time.

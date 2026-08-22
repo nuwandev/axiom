@@ -162,8 +162,8 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 type healthResponse struct {
-	Status string `json:"status"`
-	Agent  string `json:"agent"`
+	Status  string `json:"status"`
+	Agent   string `json:"agent"`
 	Version string `json:"version"`
 }
 
