@@ -1,0 +1,25 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# Local secrets/certs — never commit real material
+*.pem
+*.key
+*.crt
+!configs/example.yaml
+/etc/axiom/
+certs/
+
+# Editor/OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local runtime artifacts
+/data/
+*.log
