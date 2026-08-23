@@ -105,4 +105,6 @@ curl --cacert ca.crt --cert client.crt --key client.key \
 
 That's the full loop. From here: [`configuration.md`](configuration.md) for
 every field, [`actions.md`](actions.md) for how to write action scripts
-safely, and [`operations`](INSTALL.md) for running this in production.
+safely, [`certificates.md`](certificates.md) for renewal/rotation,
+[`jenkins-integration.md`](jenkins-integration.md) for wiring a CI system
+up to this, and [`INSTALL.md`](INSTALL.md) for running this in production.

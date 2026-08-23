@@ -106,6 +106,23 @@ see [`packaging/axiom.service`](packaging/axiom.service)). See
 [Supported platforms](#supported-platforms) for the full picture and
 [Roadmap](#roadmap) for what's next.
 
+### What's the product vs. what's yours
+
+Worth being explicit about, since it shapes how you deploy this:
+
+| Piece | Owned by |
+|---|---|
+| The Axiom binary/release | This project |
+| `config.yaml` (agent identity, action definitions, authorization) | You, per server |
+| Action scripts (what `command:` actually points to) | You, per server |
+| Certificates (server + CA + client) | Your organization's PKI — see [`docs/certificates.md`](docs/certificates.md); Axiom only loads and verifies, never issues |
+| CI/CD integration (Jenkins or otherwise) | Your pipeline, calling the HTTP API — see [`docs/jenkins-integration.md`](docs/jenkins-integration.md) |
+
+A target server receives a release binary plus its own config, certificates,
+and action scripts — **it does not need Go, Git, this source repository, or
+any development tooling installed.** See
+[Installation overview](#installation-overview) below.
+
 ## Installation overview
 
 ```bash
@@ -237,6 +254,10 @@ command, by design.
   its own binary, config, certificates, or action scripts.
 - **Every request is audited** (accepted/started/finished/rejected) to an
   append-only, synchronously-flushed log with sensitive values redacted.
+- **Certificates are external.** Axiom loads and verifies; it never issues,
+  renews, or rotates. See [`docs/certificates.md`](docs/certificates.md)
+  for the lifecycle boundary and a safe renewal flow (restart required —
+  there's no hot-reload).
 - Full threat-model write-up, including what's explicitly out of scope and
   why: [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md). Report
   vulnerabilities per [`SECURITY.md`](SECURITY.md), not as a public issue.
@@ -283,9 +304,10 @@ and [CHANGELOG](CHANGELOG.md) for what changed.
   service semantics, process lifecycle, PowerShell-based actions) behind
   the same API/config contract — not on the current Linux code path, and
   not started yet.
-- A thin CI system integration (e.g. a Jenkins pipeline helper) that wraps
-  the HTTP API — after the Linux/RHEL foundation is proven, which it now
-  is.
+- A thin CI system integration (e.g. a Jenkins shared library) that wraps
+  the raw HTTP flow documented in
+  [`docs/jenkins-integration.md`](docs/jenkins-integration.md) — that
+  guide exists now; the packaged wrapper doesn't yet.
 
 None of these are commitments to add architecture the current design
 deliberately excludes — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for what's
