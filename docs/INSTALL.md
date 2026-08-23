@@ -7,6 +7,15 @@ placeholder like `<your-ca>` or `example-ci` appears.
 Target platform: RHEL-family systems with systemd (RHEL, Rocky Linux,
 AlmaLinux, CentOS Stream).
 
+**Tested against:** Rocky Linux 9.8 ("Blue Onyx"), a 1:1 RHEL9-compatible
+rebuild, real systemd as PID 1, real cgroups v2. Full end-to-end validation
+(install → certs → config → start → mTLS → job execution → concurrency →
+crash/restart → upgrade/rollback → uninstall) was run against this exact
+target; see `docs/THREAT-MODEL.md` for the security-focused findings from
+that pass. The one thing that environment could not exercise is SELinux
+*enforcing* mode — see §9a for what was and wasn't verified there and what
+you should check on your own enforcing host before going live.
+
 ---
 
 ## 1. Prerequisites
@@ -38,24 +47,34 @@ Axiom itself has no other runtime dependencies (single static Go binary).
 /etc/axiom/certs/              mTLS material                  root:axiom  0750
 /etc/axiom/certs/ca.crt         internal CA cert               root:axiom  0640
 /etc/axiom/certs/server.crt     this agent's certificate       root:axiom  0640
-/etc/axiom/certs/server.key     this agent's private key       root:axiom  0600
+/etc/axiom/certs/server.key     this agent's private key       root:axiom  0640
 /opt/axiom/actions/            action scripts                 root:axiom  0750
 /opt/axiom/actions/*.sh         individual scripts             root:axiom  0750 (0o750, not group/world-writable)
 /var/log/axiom/                audit log directory             axiom:axiom 0750
 /var/log/axiom/audit.log        audit log                       axiom:axiom 0640
-/var/lib/axiom/                reserved, unused in v1          axiom:axiom 0750
+/var/lib/axiom/                $HOME for the axiom account      axiom:axiom 0750
 ```
 
 Design intent — **the axiom service account cannot modify its own binary,
 configuration, certificates, or action scripts.** Everything under
 `/etc/axiom` and `/opt/axiom` is root-owned and not group/world-writable;
-Axiom starts up refusing to run if that isn't true (see §7). The only path
-the service account can write to is `/var/log/axiom`. This is enforced both
-by file ownership/permissions and, at runtime, by the systemd sandbox
-(`ProtectSystem=strict` — see [`packaging/axiom.service`](../packaging/axiom.service)).
+Axiom starts up refusing to run if that isn't true (see §7). The only paths
+the service account can write to are `/var/log/axiom` (the audit log) and
+`/var/lib/axiom` (see below). This is enforced both by file
+ownership/permissions and, at runtime, by the systemd sandbox
+(`ProtectSystem=strict` + an explicit `ReadWritePaths` — see
+[`packaging/axiom.service`](../packaging/axiom.service)).
 
-`/var/lib/axiom` is created for forward compatibility but nothing in v1
-writes to it — job history is in-memory only (see §11).
+`/var/lib/axiom` is set as the `axiom` account's `$HOME` in the systemd
+unit (`Environment=HOME=/var/lib/axiom`). The account has no real home
+directory (`useradd --no-create-home`) and `ProtectHome=true` hides
+`/home` entirely, so without this, `$HOME` would be unset/unresolvable —
+found during real-host validation to break tools an action script may
+reasonably invoke regardless of container engine choice (e.g. the `docker`
+CLI's `~/.docker/config.json` for private registry credentials, or a
+rootless container engine's runtime-state resolution). Axiom's own job
+history is still in-memory only and does not use this directory (see §11)
+— it exists purely as a stable, writable `$HOME` for child processes.
 
 ---
 
@@ -107,12 +126,22 @@ you copy files in):
 
 ```bash
 sudo chown root:axiom /etc/axiom/certs/*.crt /etc/axiom/certs/*.key
-sudo chmod 0640 /etc/axiom/certs/ca.crt /etc/axiom/certs/server.crt
-sudo chmod 0600 /etc/axiom/certs/server.key
+sudo chmod 0640 /etc/axiom/certs/ca.crt /etc/axiom/certs/server.crt /etc/axiom/certs/server.key
 ```
 
 Axiom validates all three at startup (existence, valid PEM, valid X.509 for
 the certs) and refuses to start otherwise.
+
+**On `server.key`'s mode: 0640, not something tighter like 0600.** The
+`axiom` service account is a *group* member of `axiom`, not the file's
+owner (everything under `/etc/axiom` stays root-owned so the service
+account can never modify it — see §2). `0600` leaves zero permission bits
+for the group, so the running `axiom` process itself could not read its
+own private key and would fail to start with a permission error. `0640`
+(owner `root` read/write, group `axiom` read-only, no world access) is the
+correct minimum here, not a relaxation — group-read is what lets Axiom
+actually use the key at all, while the world having no access and the
+`axiom` account having no write access are both still fully enforced.
 
 Issue one client certificate per calling identity (e.g. per Jenkins
 controller/credential), with a Common Name you'll reference in
@@ -200,9 +229,10 @@ rather than just trusting the launch command's exit code.
 | `/etc/axiom/` | root:axiom | 0750 | No |
 | `/etc/axiom/config.yaml` | root:axiom | 0640 | No |
 | `/etc/axiom/certs/` | root:axiom | 0750 | No |
-| `/etc/axiom/certs/server.key` | root:axiom | 0600 | No |
+| `/etc/axiom/certs/server.key` | root:axiom | 0640 | No |
 | `/opt/axiom/actions/` | root:axiom | 0750 | No |
-| `/var/log/axiom/` | axiom:axiom | 0750 | Yes (only this) |
+| `/var/log/axiom/` | axiom:axiom | 0750 | Yes |
+| `/var/lib/axiom/` | axiom:axiom | 0750 | Yes ($HOME for child tools) |
 | `/etc/systemd/system/axiom.service` | root:root | 0644 | No |
 
 ---
@@ -219,6 +249,88 @@ option (`MemoryDenyWriteExecute`) deliberately left disabled by default
 because it can be incompatible with certain interpreters an action script
 might invoke, with instructions there for enabling it once your specific
 action scripts are known to be compatible.
+
+**Also set by the unit:** `Environment=HOME=/var/lib/axiom` and
+`/var/lib/axiom` in `ReadWritePaths`. Found during real-host validation:
+the `axiom` account has no real home directory
+(`useradd --no-create-home`) and `ProtectHome=true` hides `/home`, so
+`$HOME` is otherwise unset — which breaks tools an action script may
+reasonably invoke regardless of container engine choice (e.g. the `docker`
+CLI's `~/.docker/config.json` for registry auth, or a rootless container
+engine's runtime-state resolution). Two things to know if you hit this
+yourself: (1) some `useradd` defaults still populate the passwd
+home-directory *field* as `/home/<user>` even with `--no-create-home` —
+pass `--home-dir /var/lib/axiom` explicitly (the installer does this) so
+the field itself is correct, since some tools resolve home via the user
+database rather than `$HOME`; (2) if you `usermod` an *existing* account's
+home directory instead of setting it at creation time, verify with
+`getent passwd axiom` that it actually took effect — it did not in initial
+testing under `usermod -d` and required a fresh `useradd --home-dir` (or a
+direct fix of the passwd entry) to take effect.
+
+---
+
+## 9a. SELinux
+
+RHEL-family systems normally run SELinux in `Enforcing` mode with the
+`targeted` policy. **Do not disable it** to make Axiom work — none of the
+validation done for this guide found a reason to.
+
+What was verified: using the real, shipped RHEL9 policy database
+(`selinux-policy-targeted`) against the actual installed layout,
+`matchpathcon` resolves every path Axiom touches to a generic,
+already-permissive type — no specialized or restrictive context is
+implicated:
+
+| Path | Resolved SELinux type |
+|---|---|
+| `/usr/local/bin/axiom` | `bin_t` |
+| `/etc/axiom/config.yaml`, `/etc/axiom/certs/*` | `etc_t` |
+| `/opt/axiom/actions/*.sh` | `usr_t` |
+| `/var/log/axiom/audit.log` | `var_log_t` |
+
+These are all standard path-based defaults with no per-service policy
+module involved. A custom systemd service with no dedicated SELinux policy
+runs under the default `unconfined_service_t` domain, which has broad,
+unrestricted access to generic types like the ones above — so **no custom
+SELinux policy module is expected to be required** for the documented
+installation layout. Network binding needs no SELinux port-context work
+either: Axiom's own `CapabilityBoundingSet=` is already empty (see §9), so
+it cannot bind a privileged port (`<1024`) regardless of SELinux — the
+documented port (`8443`) is unreserved and unrestricted under the targeted
+policy.
+
+**What this guide could not verify directly:** live *enforcing*-mode
+behavior. The validation environment for this guide runs a kernel without
+the SELinux LSM compiled in at all (confirmed via `getenforce` reporting
+`Disabled` even with the policy packages installed, and no
+`/sys/fs/selinux`) — a limitation of that specific test host, not of
+Axiom or of RHEL. The static analysis above is real and uses RHEL's actual
+policy data, but it is not a substitute for seeing zero AVC denials on a
+genuine enforcing host. **Before a production rollout, on your actual
+SELinux-enforcing RHEL host:**
+
+```bash
+getenforce   # confirm Enforcing
+sudo systemctl start axiom
+# exercise the API: health check, trigger an action, fetch logs
+sudo ausearch -m avc -ts recent   # or: journalctl -t setroubleshoot
+```
+
+If that shows zero denials (expected, per the analysis above), no policy
+work is needed. If a denial does appear (e.g. because of a locally
+customized policy on that host), generate the *minimal* correcting module
+for that exact denial and nothing broader:
+
+```bash
+sudo ausearch -m avc -ts recent | audit2allow -M axiom-local
+sudo semodule -i axiom-local.pp
+```
+
+Do not use `audit2allow -a` (bulk-allows every recent denial from every
+service) and do not run `setenforce 0` — both defeat the point of running
+SELinux at all. Document exactly which denial required the module and why,
+the same way this guide documents every other permission decision.
 
 ---
 

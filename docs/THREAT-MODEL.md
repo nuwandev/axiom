@@ -82,8 +82,10 @@ plane (explicitly out of scope for this reason among others).
 
 **Can:** read whatever the filesystem's normal permission model already
 lets them read; observe the running axiom process in `ps`.
-**Cannot:** read `/etc/axiom/certs/server.key` (mode `0600`, owned
-`root:axiom`), read or modify `/etc/axiom/config.yaml` or any action script
+**Cannot:** read `/etc/axiom/certs/server.key` (mode `0640`, owned
+`root:axiom` — group-readable only by the `axiom` service account, not
+world-readable, not writable by anyone but root), read or modify
+`/etc/axiom/config.yaml` or any action script
 (root-owned, `0750`/`0640`, not group/world-writable — enforced both by the
 installed file modes and by Axiom refusing to start at all if any of these
 is found to be insecure at load time), or write to `/var/log/axiom` (owned
@@ -205,15 +207,34 @@ practice, not merely optional.
 
 **Can:** attempt to have `command:` or a certificate/audit path in config
 point through a symlink.
-**Cannot:** use a symlink to make an insecurely-owned or writable target
-pass Axiom's security checks — `checkScriptSecurity` and
-`requireSecureParentDir` use `os.Stat` (which follows symlinks), so the
-*real* target's ownership/permissions are what's judged, not the symlink's;
-a relative path or a path containing `.`/`..` segments is rejected outright
-at config load (`command != filepath.Clean(command)`); every ancestor
-directory in the resolved path is walked and must be non-group/world-
-writable (except where the sticky bit legitimately protects it, e.g.
-system `/tmp` — not a location used for Axiom's own paths).
+**Cannot:** get Axiom to accept it — `command:`, `ca_file`, `cert_file`,
+and `key_file` are rejected outright at config load if the configured path
+itself is a symlink (`rejectSymlink`, verified by
+`TestCheckScriptSecurity_RejectsSymlink`). A relative path or a path
+containing `.`/`..` segments is also rejected
+(`command != filepath.Clean(command)`); every ancestor *directory* in the
+path is separately walked and must be non-group/world-writable (except
+where the sticky bit legitimately protects it, e.g. system `/tmp` — not a
+location used for Axiom's own paths) — directory symlinks in that walk
+(e.g. RHEL's usr-merge `/bin -> /usr/bin`) are still followed to their real
+target for the ownership/permission judgment, only the *leaf* file/path
+itself may not be a symlink.
+
+**Finding from real-host validation, fixed, not just documented:** an
+earlier version of this control only checked file-level
+ownership/permissions with `os.Stat` (which follows symlinks) but walked
+ancestor directories starting from the *symlink's own location*, never
+resolving to where the symlink actually pointed. A script placed in a
+perfectly secure directory that was itself a symlink into a different,
+insecure directory would have passed every check while still being
+replaceable by an untrusted user through that other directory — the
+ancestor-directory walk was checking the wrong tree. Resolving and
+re-walking the real target chain was considered and rejected as
+unnecessary complexity for a path shape the installation docs never call
+for (scripts and certificates are documented to live directly at their
+configured path); rejecting symlinks outright closes the same gap with
+much less code and no symlink-chain edge cases to reason about.
+
 **Blast radius:** none — this class of attack is caught at config-load
 time (startup failure), not discovered at execution time.
 

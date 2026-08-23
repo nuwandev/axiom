@@ -16,6 +16,9 @@ import (
 // service account still enforce "owned by the expected administrator"),
 // and not be writable by its group or by other users.
 func checkScriptSecurity(path string) error {
+	if err := rejectSymlink(path); err != nil {
+		return err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("not accessible: %w", err)
@@ -41,6 +44,31 @@ func evaluateScriptSecurity(path string, isDir bool, mode os.FileMode, ownerUID,
 	}
 	if ownerUID != 0 && ownerUID != expectedUID {
 		return fmt.Errorf("%q is not owned by root or the Axiom service account (owner uid %d); action scripts must be owned by the administrator account", path, ownerUID)
+	}
+	return nil
+}
+
+// rejectSymlink refuses a path whose final component is itself a symlink.
+//
+// requireSecureParentDir (below) walks the ancestor directories of the
+// literal configured path, not of whatever a symlink at that path resolves
+// to — so a symlink pointing into a directory the ancestor-walk never
+// visits would let an untrusted local user replace the *real* script/cert
+// simply by controlling that other directory, even though the symlink
+// itself, and every ancestor of the symlink's own location, look perfectly
+// secure. Rather than resolve and re-walk the target chain (extra
+// complexity for a pattern the installation docs never call for — action
+// scripts and certificates are documented to live directly at their
+// configured path), the simpler and equally correct fix is to not allow
+// this path shape at all: action scripts and mTLS/audit paths must be
+// regular files/directories, not symlinks.
+func rejectSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("not accessible: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%q is a symlink; configured paths must be regular files, not symlinks (a symlink's target directory isn't covered by the ancestor-directory security check)", path)
 	}
 	return nil
 }

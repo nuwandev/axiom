@@ -31,7 +31,7 @@ ETC_DIR="/etc/axiom"
 CERTS_DIR="${ETC_DIR}/certs"
 ACTIONS_DIR="/opt/axiom/actions"
 LOG_DIR="/var/log/axiom"
-STATE_DIR="/var/lib/axiom" # reserved for future use; not written to by v1
+STATE_DIR="/var/lib/axiom" # also used as $HOME for the axiom account (see packaging/axiom.service)
 SYSTEMD_UNIT_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packaging/axiom.service"
 SYSTEMD_UNIT_DEST="/etc/systemd/system/axiom.service"
 
@@ -66,11 +66,25 @@ else
 fi
 
 if ! id "$AXIOM_USER" >/dev/null 2>&1; then
-	log "creating system user '$AXIOM_USER' (no shell, no login, no home directory)"
-	useradd --system --no-create-home --shell /usr/sbin/nologin \
+	log "creating system user '$AXIOM_USER' (no shell, no login; \$HOME=$STATE_DIR)"
+	# --home-dir sets the passwd home-directory field explicitly. Found
+	# during real-host validation: without this, some useradd defaults
+	# still populate that field as /home/axiom even with
+	# --no-create-home, and some tools an action script might invoke
+	# resolve "home" via the user database rather than $HOME — so the
+	# field itself has to be correct, not just the environment variable
+	# the systemd unit sets.
+	useradd --system --no-create-home --home-dir "$STATE_DIR" --shell /usr/sbin/nologin \
 		--gid "$AXIOM_GROUP" --comment "Axiom automation agent" "$AXIOM_USER"
 else
 	log "user '$AXIOM_USER' already exists"
+	CURRENT_HOME="$(getent passwd "$AXIOM_USER" | cut -d: -f6)"
+	if [[ "$CURRENT_HOME" != "$STATE_DIR" ]]; then
+		log "WARNING: existing user '$AXIOM_USER' has home directory '$CURRENT_HOME', expected '$STATE_DIR'"
+		log "  usermod -d has been unreliable in some environments during testing;"
+		log "  verify with 'getent passwd $AXIOM_USER' after running:"
+		log "    usermod -d $STATE_DIR $AXIOM_USER"
+	fi
 fi
 
 # --- Filesystem layout --------------------------------------------------------
@@ -90,7 +104,7 @@ log "  $ETC_DIR        (root:$AXIOM_GROUP, 0750) — config"
 log "  $CERTS_DIR  (root:$AXIOM_GROUP, 0750) — mTLS material (place manually)"
 log "  $ACTIONS_DIR       (root:$AXIOM_GROUP, 0750) — action scripts (place manually)"
 log "  $LOG_DIR        ($AXIOM_USER:$AXIOM_GROUP, 0750) — audit log"
-log "  $STATE_DIR        ($AXIOM_USER:$AXIOM_GROUP, 0750) — reserved, unused in v1"
+log "  $STATE_DIR        ($AXIOM_USER:$AXIOM_GROUP, 0750) — \$HOME for the axiom account"
 
 # --- Binary ------------------------------------------------------------------
 

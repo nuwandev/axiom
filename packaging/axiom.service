@@ -11,6 +11,17 @@ ExecStart=/usr/local/bin/axiom -config /etc/axiom/config.yaml
 Restart=on-failure
 RestartSec=5s
 
+# The axiom account has no home directory (useradd --no-create-home) and
+# ProtectHome=true hides /home entirely, so $HOME is otherwise unset/
+# unresolvable. Found via real-host validation: several tools an action
+# script might reasonably invoke consult $HOME regardless of container
+# engine choice -- e.g. the docker CLI's ~/.docker/config.json for private
+# registry auth, or a rootless podman's runtime-state resolution -- and
+# fail outright without it. /var/lib/axiom is already axiom-owned and
+# already part of the documented layout, so it's used here rather than
+# introducing a new writable path.
+Environment=HOME=/var/lib/axiom
+
 # ---------------------------------------------------------------------------
 # Sandboxing / least-privilege hardening.
 #
@@ -41,12 +52,15 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 
-# The one path Axiom (and, transitively, action scripts) may write to.
-# Extend this list — one line per path — for any action that needs to write
-# into its own application directory (e.g. a deploy script writing release
-# artifacts under /opt/some-app/releases). Do not widen it beyond what a
-# specific, known action requires.
-ReadWritePaths=/var/log/axiom
+# The paths Axiom (and, transitively, action scripts) may write to:
+# /var/log/axiom for the audit log, /var/lib/axiom as $HOME (see
+# Environment=HOME above -- some child tools write state/config there, e.g.
+# a container engine's auth config). Extend this list -- one line per path
+# -- for any action that needs to write into its own application directory
+# (e.g. a deploy script writing release artifacts under
+# /opt/some-app/releases). Do not widen it beyond what a specific, known
+# action requires.
+ReadWritePaths=/var/log/axiom /var/lib/axiom
 
 # Give every child process a private /tmp, invisible to and from every other
 # service on the box.

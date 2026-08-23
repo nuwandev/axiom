@@ -408,6 +408,9 @@ func requireExistingFile(path string) error {
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("must be an absolute path, got %q", path)
 	}
+	if err := rejectSymlink(path); err != nil {
+		return err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("not accessible: %w", err)
