@@ -1,0 +1,381 @@
+{
+  "info": {
+    "name": "Axiom v1.0.0 API",
+    "_postman_id": "a11b2c3d-4e5f-4a1b-9c2d-3e4f5a6b7c8d",
+    "description": "Manual API testing/documentation collection for Axiom v1.0.0 -- a secure server-side automation/action agent for Linux servers.\n\nThis collection is a testing artifact only. It does not ship with Axiom and does not affect its runtime/API behavior.\n\nAxiom's entire API surface is four endpoints, all covered here:\n- GET  /health\n- POST /v1/actions/{action}\n- GET  /v1/jobs/{job_id}\n- GET  /v1/jobs/{job_id}/logs\n\nEVERY request in this collection (except /health, if your agent has security.health.allow_anonymous: true) requires mutual TLS: a client certificate signed by the CA your Axiom agent trusts. Postman cannot express a client certificate inside collection/request JSON for security reasons -- you must configure it separately in Postman's app-level Settings > Certificates (per-domain), matching {{base_url}}'s host. See docs/postman-testing.md in the repository for the full walkthrough, including this limitation.\n\nNo certificates, private keys, or credentials are included in or required by this file. No company-specific hosts, IPs, or project names are used -- every environment-specific value is a collection variable you fill in yourself.\n\nPostman here is a manual/exploratory testing client standing in for a real caller (e.g. a Jenkins pipeline) -- it calls the exact same four endpoints documented in docs/jenkins-integration.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://axiom-agent.example.internal:8443",
+      "description": "Base URL of the Axiom agent you're testing against, including port. Replace with your own agent's address -- this placeholder resolves nowhere. The client certificate you configure in Postman's Settings > Certificates must be attached to this exact host."
+    },
+    {
+      "key": "action",
+      "value": "backend.deploy",
+      "description": "Name of an action to trigger. 'backend.deploy' is a common example name from this project's docs (see configs/example.yaml) -- it must actually exist in the config.yaml of the Axiom agent you're pointing at, and your client identity must be allowlisted for it, or you'll get 404/403 respectively."
+    },
+    {
+      "key": "image_tag",
+      "value": "uat-20260823-example",
+      "description": "Example value for a declared 'image_tag' action parameter, matching the pattern used in this project's example config (^[a-zA-Z0-9._-]{1,128}$). Only relevant if the action you're triggering actually declares an image_tag parameter -- Axiom rejects any parameter an action hasn't declared."
+    },
+    {
+      "key": "job_id",
+      "value": "",
+      "description": "Populated automatically by the 'Trigger Action' request's test script after a successful (202) trigger. You can also set this manually to check on a job triggered elsewhere."
+    },
+    {
+      "key": "unauthorized_action",
+      "value": "an-action-your-identity-is-not-allowed",
+      "description": "For the 'Unauthorized Action' negative test: a real, configured action name that your client identity's allowlist does NOT include. Adjust to match your own config.yaml's authorization.identities section."
+    },
+    {
+      "key": "nonexistent_action",
+      "value": "no.such.action",
+      "description": "For the 'Nonexistent Action' negative test: an action name that does not exist in the target agent's config at all. The default value is unlikely to collide with a real action name, but adjust if needed."
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-level: nothing global needed. Each request's own",
+          "// pre-request/test scripts (where present) are self-contained and",
+          "// commented in place."
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "GET /health. Authenticated by default -- requires the same client certificate as every other endpoint unless the target agent has security.health.allow_anonymous: true in its config. Expect {\"status\":\"ok\",\"agent\":\"<agent-id>\",\"version\":\"...\"}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('response has expected health fields', function () {",
+                  "    var body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('status', 'ok');",
+                  "    pm.expect(body).to.have.property('agent');",
+                  "    pm.expect(body).to.have.property('version');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Actions",
+      "item": [
+        {
+          "name": "Trigger Action",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parameters\": {\n    \"image_tag\": \"{{image_tag}}\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/actions/{{action}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "actions", "{{action}}"]
+            },
+            "description": "POST /v1/actions/{action}. Triggers a configured action and returns immediately with a job_id -- the action itself runs in the background.\n\nIMPORTANT: '{{action}}' must already exist as a named action in the target Axiom agent's config.yaml, and your client certificate's identity must be listed under that action in authorization.identities -- Axiom does not accept arbitrary action names or commands. See docs/actions.md in the repository for the action model.\n\nThe request body's 'parameters' object may only contain parameter names the action has actually declared in its config (e.g. 'image_tag') -- an undeclared parameter, or one that fails its configured regex pattern, is rejected with 400 before the action ever runs. If the action takes no parameters, send an empty body or {}.\n\nOn success (202), the test script below saves job_id into the job_id collection variable automatically, ready for the 'Get Job Status' and 'Get Job Logs' requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// This assumes the trigger SUCCEEDED (202). If you got 400/403/404/409",
+                  "// instead, see the Negative Tests folder for what each means -- this",
+                  "// script only asserts/extracts on the success path.",
+                  "if (pm.response.code === 202) {",
+                  "    pm.test('status is 202 Accepted', function () {",
+                  "        pm.response.to.have.status(202);",
+                  "    });",
+                  "",
+                  "    pm.test('response has job_id and queued status', function () {",
+                  "        var body = pm.response.json();",
+                  "        pm.expect(body).to.have.property('job_id');",
+                  "        pm.expect(body.job_id).to.be.a('string').and.not.empty;",
+                  "        pm.expect(body).to.have.property('status', 'queued');",
+                  "        // Extract job_id for the next requests in this collection.",
+                  "        pm.collectionVariables.set('job_id', body.job_id);",
+                  "    });",
+                  "} else {",
+                  "    pm.test('trigger did not return 202 -- see response body for why', function () {",
+                  "        console.log('Trigger response (' + pm.response.code + '): ' + pm.response.text());",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Job Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/jobs/{{job_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "jobs", "{{job_id}}"]
+            },
+            "description": "GET /v1/jobs/{job_id}. Run 'Trigger Action' first (or set {{job_id}} manually) so this has a real job to look up.\n\nStatus is one of: queued, running, succeeded, failed, cancelled. Poll this on an interval (e.g. every 5-10s) until it reaches a terminal state (succeeded/failed/cancelled) -- see docs/jenkins-integration.md for the polling pattern a real CI caller uses.\n\n404 means either the job_id is wrong/malformed, or the Axiom agent has restarted since the job ran -- job history is in-memory only and does not survive a restart (see docs/INSTALL.md section 11); the audit log is the durable record instead."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('response has expected job fields', function () {",
+                  "    var body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('job_id');",
+                  "    pm.expect(body).to.have.property('action');",
+                  "    pm.expect(body).to.have.property('status');",
+                  "    pm.expect(body.status).to.be.oneOf(['queued', 'running', 'succeeded', 'failed', 'cancelled']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Job Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/jobs/{{job_id}}/logs",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "jobs", "{{job_id}}", "logs"]
+            },
+            "description": "GET /v1/jobs/{job_id}/logs. Captured stdout/stderr for the job, size-bounded per the target agent's output.max_bytes config (default 2 MiB per stream). stdout_truncated/stderr_truncated indicate whether the cap was hit."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('response has expected log fields', function () {",
+                  "    var body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('stdout');",
+                  "    pm.expect(body).to.have.property('stderr');",
+                  "    pm.expect(body).to.have.property('stdout_truncated');",
+                  "    pm.expect(body).to.have.property('stderr_truncated');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Negative Tests (security model)",
+      "description": "Each request here is EXPECTED to fail with a specific status code -- that's the point. Use these to manually verify Axiom's default-deny authorization, mTLS enforcement, and parameter validation without writing any code. None of these send a dangerous or arbitrary-command payload -- Axiom has no endpoint that would accept one in the first place (see docs/security.md).",
+      "item": [
+        {
+          "name": "Unauthenticated Request (no client cert)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/jobs/{{job_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "jobs", "{{job_id}}"]
+            },
+            "description": "Expect 401. Postman attaches a client certificate per-domain from Settings > Certificates, not per-request -- there is no in-collection way to send 'this one request without the cert'. To actually run this test, temporarily remove/disable the client certificate for this host in Postman's settings, run this request, then re-add the certificate before continuing with the rest of the collection. See docs/postman-testing.md for the exact steps -- this is the main Postman/mTLS limitation to be aware of."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401 when no client certificate is presented', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unauthorized Action (identity not allowlisted)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/actions/{{unauthorized_action}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "actions", "{{unauthorized_action}}"]
+            },
+            "description": "Expect 403. Uses {{unauthorized_action}} -- a real, existing action name that your client certificate's identity is deliberately NOT allowlisted for in the target agent's config.yaml (authorization.identities). This demonstrates default-deny: a valid, CA-trusted certificate is not enough on its own."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403 for a non-allowlisted action', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Nonexistent Action",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/actions/{{nonexistent_action}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "actions", "{{nonexistent_action}}"]
+            },
+            "description": "Expect 404. Axiom only recognizes actions explicitly declared in the target agent's config -- there is no arbitrary-command endpoint, so an unrecognized name is simply 'not found,' never executed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404 for an action that does not exist', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing Required Parameter",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parameters\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/actions/{{action}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "actions", "{{action}}"]
+            },
+            "description": "Expect 400. Sends an empty parameters object against an action that declares at least one required parameter (e.g. 'image_tag: required: true' in the example config) -- adjust {{action}} to point at such an action in your own config if the default doesn't declare one."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400 for a missing required parameter', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid Parameter (fails declared pattern)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parameters\": {\n    \"image_tag\": \"not a valid tag with spaces\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/actions/{{action}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "actions", "{{action}}"]
+            },
+            "description": "Expect 400. The example config's image_tag pattern is ^[a-zA-Z0-9._-]{1,128}$ -- spaces aren't allowed, so this value fails validation before the action ever runs. This is a benign example chosen only to violate the pattern; it is not an injection payload and does not need to be (Axiom never passes parameter values through a shell in the first place -- see docs/security.md)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400 for a parameter value that fails its declared pattern', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
