@@ -35,11 +35,35 @@ func TLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 	}
 
 	return &tls.Config{
+		// TLS 1.2 minimum: modern Jenkins/JVM and Go HTTP clients all
+		// support 1.3, but 1.2 is kept as a floor for compatibility with
+		// slightly older internal clients. Only forward-secret AEAD cipher
+		// suites are offered for a 1.2 handshake; a 1.3 handshake ignores
+		// CipherSuites entirely and Go's fixed, already-strong 1.3 suite
+		// set is used instead — TLS 1.3 ciphers are intentionally not
+		// configurable by design of the standard library.
 		MinVersion:   tls.VersionTLS12,
+		CipherSuites: strongTLS12CipherSuites,
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,
+			tls.CurveP256,
+		},
 		Certificates: []tls.Certificate{cert},
 		ClientCAs:    pool,
 		ClientAuth:   tls.RequestClientCert,
 	}, nil
+}
+
+// strongTLS12CipherSuites restricts a negotiated TLS 1.2 connection to
+// ECDHE (forward secret) key exchange with AEAD (AES-GCM/ChaCha20-Poly1305)
+// bulk ciphers — no CBC-mode, no RSA key exchange, no RC4/3DES.
+var strongTLS12CipherSuites = []uint16{
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+	tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
 }
 
 // Identity is a verified client identity, derived from a client

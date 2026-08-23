@@ -46,10 +46,12 @@ go test ./... -race
 go run ./cmd/axiom -config /path/to/config.yaml
 ```
 
-In production, install the binary, config, certs, and action scripts as
-described in the config reference above, then run under systemd using
-[`packaging/axiom.service`](packaging/axiom.service) as a dedicated
-non-root `axiom` service account.
+In production, use [`scripts/install.sh`](scripts/install.sh) (idempotent,
+RHEL-family) to create the service account and filesystem layout and
+install the binary and systemd unit, then follow
+[`docs/INSTALL.md`](docs/INSTALL.md) for certificates, configuration, and
+verification. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for the
+security review behind the hardening choices.
 
 ## Scope
 

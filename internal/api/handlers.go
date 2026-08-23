@@ -5,9 +5,27 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
 
 	"axiom/internal/audit"
 	"axiom/internal/jobs"
+)
+
+// actionNamePattern mirrors config's action-name charset (see
+// internal/config.actionNamePattern) so a malformed action segment in the
+// URL is rejected with a clean 400 before it ever reaches a map lookup,
+// audit record, or log line.
+var actionNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
+
+// maxParametersPerRequest and maxParameterValueLen are request-level caps
+// enforced before a request ever reaches the job manager — defense in
+// depth alongside (not a replacement for) each action's own declared
+// parameter schema in config, which is authoritative for what an action
+// actually accepts.
+const (
+	maxParametersPerRequest = 64
+	maxParameterValueLen    = 4096
 )
 
 type errorResponse struct {
@@ -42,6 +60,10 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.PathValue("action")
+	if !actionNamePattern.MatchString(action) {
+		writeError(w, http.StatusBadRequest, "invalid action name")
+		return
+	}
 
 	allowed := s.cfg.Identities[identity.CommonName]
 	if !allowed.IsAllowed(action) {
@@ -58,10 +80,28 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req triggerRequest
-	body := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if r.ContentLength != 0 {
-		if err := json.NewDecoder(body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		ct := r.Header.Get("Content-Type")
+		if ct != "" && !strings.HasPrefix(ct, "application/json") {
+			writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+			return
+		}
+		body := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		dec := json.NewDecoder(body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 			writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+			return
+		}
+	}
+
+	if len(req.Parameters) > maxParametersPerRequest {
+		writeError(w, http.StatusBadRequest, "too many parameters")
+		return
+	}
+	for name, value := range req.Parameters {
+		if len(value) > maxParameterValueLen {
+			writeError(w, http.StatusBadRequest, "parameter value too large: "+name)
 			return
 		}
 	}
@@ -107,6 +147,10 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := r.PathValue("job_id")
+	if !jobs.ValidID(jobID) {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
 	snap, ok := s.jobs.Get(jobID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "job not found")
@@ -147,6 +191,10 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := r.PathValue("job_id")
+	if !jobs.ValidID(jobID) {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
 	stdout, stderr, stdoutTrunc, stderrTrunc, ok := s.jobs.Logs(jobID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "job not found")

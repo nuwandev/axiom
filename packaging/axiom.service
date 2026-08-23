@@ -11,16 +11,87 @@ ExecStart=/usr/local/bin/axiom -config /etc/axiom/config.yaml
 Restart=on-failure
 RestartSec=5s
 
-# Least-privilege hardening. Axiom itself only needs to read its config and
-# certs, execute configured action scripts, and write its audit log — it
-# does not need to write anywhere else on the filesystem.
+# ---------------------------------------------------------------------------
+# Sandboxing / least-privilege hardening.
+#
+# Axiom's own runtime needs: read /etc/axiom/config.yaml + certs, execute
+# files under /opt/axiom/actions, write append-only to /var/log/axiom, and
+# use IPv4/IPv6 TCP for its HTTPS listener. Everything below is scoped to
+# grant exactly that and nothing more.
+#
+# IMPORTANT: most of systemd's process-level sandboxing (namespaces, syscall
+# filters, address-family restrictions) is inherited by every child process
+# Axiom spawns — i.e. by the configured action scripts and whatever they in
+# turn invoke (docker, kubectl, pm2, systemctl, ...). Settings below were
+# chosen to stay compatible with that: action scripts can still reach the
+# network, the Docker/container-runtime socket, and write to their own
+# application's directories (each such path must be explicitly declared in
+# ReadWritePaths, since ProtectSystem=strict makes everything else read-only).
+# ---------------------------------------------------------------------------
+
+# No process in this unit's tree can ever (re-)gain privileges it doesn't
+# already have, even via a setuid/setgid binary an action script calls.
 NoNewPrivileges=true
+
+# Whole filesystem is mounted read-only except /dev, /proc, /sys (kernel-
+# managed) and paths listed in ReadWritePaths. This is what actually
+# enforces "the axiom account cannot modify its own binary, config,
+# certificates, or action scripts" — those paths simply aren't writable at
+# the mount-namespace level, regardless of any file-permission bug.
 ProtectSystem=strict
 ProtectHome=true
-PrivateTmp=true
+
+# The one path Axiom (and, transitively, action scripts) may write to.
+# Extend this list — one line per path — for any action that needs to write
+# into its own application directory (e.g. a deploy script writing release
+# artifacts under /opt/some-app/releases). Do not widen it beyond what a
+# specific, known action requires.
 ReadWritePaths=/var/log/axiom
+
+# Give every child process a private /tmp, invisible to and from every other
+# service on the box.
+PrivateTmp=true
+
+# No capabilities granted, none inherited, none permitted to be gained.
+# If a specific action genuinely needs a privileged operation (e.g.
+# restarting a system-level systemd unit, binding a low port), the
+# supported pattern is a narrowly-scoped, single-command NOPASSWD sudoers
+# rule invoked from inside that one action's script — not broadening this
+# unit's capability set for every action.
 CapabilityBoundingSet=
 AmbientCapabilities=
+
+# Axiom's listener only needs IPv4/IPv6 TCP. AF_UNIX is included because
+# action scripts commonly need it (e.g. the Docker CLI talking to
+# /var/run/docker.sock, or a local IPC socket for pm2/systemd). AF_NETLINK
+# is included because some common CLI tooling (e.g. `ip`, parts of
+# container runtimes) uses it for route/interface queries.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Hardening with essentially no compatibility cost for this workload:
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+
+# Deliberately NOT enabled: MemoryDenyWriteExecute.
+# Action scripts are operator-authored and unbounded in what they invoke —
+# some ecosystems Axiom is explicitly meant to drive (e.g. a Node/pm2-based
+# action that runs a JIT-compiling interpreter directly, rather than just
+# talking to an already-running daemon) can need W+X memory mappings that
+# this setting forbids, and would fail in a way that's hard to diagnose from
+# the outside. If your action scripts are verified to be JIT-free (pure
+# shell + statically-compiled CLI tools like docker/kubectl), it is safe to
+# add MemoryDenyWriteExecute=true here — do that as a per-install decision
+# once your actions are known, not as a blanket default.
+
+# Files Axiom creates (only the audit log, in v1) get restrictive
+# permissions regardless of the process's default umask.
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

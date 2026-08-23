@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"fmt"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -13,6 +14,16 @@ import (
 // millisecond timestamp followed by 80 bits of randomness) without pulling
 // in a third-party dependency for something this small.
 var crockfordEncoding = base32.NewEncoding("0123456789ABCDEFGHJKMNPQRSTVWXYZ").WithPadding(base32.NoPadding)
+
+// idPattern matches the exact shape NewID produces: 26 Crockford base32
+// characters. Handlers use it to reject a malformed job_id with a cheap,
+// clean check before doing anything else with client-supplied input.
+var idPattern = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
+
+// ValidID reports whether s has the shape of an ID produced by NewID.
+func ValidID(s string) bool {
+	return idPattern.MatchString(s)
+}
 
 var (
 	idMu        sync.Mutex

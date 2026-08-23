@@ -18,6 +18,18 @@ const (
 	StatusCancelled Status = "cancelled"
 )
 
+// terminal reports whether the job has finished and will never transition
+// again — used by the manager's bounded-history eviction, which must never
+// evict a still-live job.
+func (s Status) terminal() bool {
+	switch s {
+	case StatusSucceeded, StatusFailed, StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Job is one execution of a configured action. All fields are accessed
 // through the Manager's locking, never mutated directly by callers.
 type Job struct {

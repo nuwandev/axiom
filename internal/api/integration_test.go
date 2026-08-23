@@ -4,12 +4,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -310,5 +313,111 @@ func TestIntegration_JobLifecycleAndLogs(t *testing.T) {
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
 		t.Fatalf("logs status = %d", r.StatusCode)
+	}
+}
+
+func TestIntegration_RejectsUnknownJSONFields(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 20)
+	client := env.clientFor(certPEM, keyPEM)
+
+	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json",
+		strings.NewReader(`{"parameters":{},"not_a_real_field":true}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for an unknown JSON field", resp.StatusCode)
+	}
+}
+
+func TestIntegration_RejectsWrongContentType(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 21)
+	client := env.clientFor(certPEM, keyPEM)
+
+	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "text/plain",
+		strings.NewReader(`{"parameters":{}}`))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("status = %d, want 415 for a non-JSON Content-Type", resp.StatusCode)
+	}
+}
+
+func TestIntegration_RejectsInvalidActionNameInPath(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 22)
+	client := env.clientFor(certPEM, keyPEM)
+
+	resp, err := client.Post(env.server.URL+"/v1/actions/"+url.PathEscape("../etc/passwd"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 400 or 404 for a malformed action name", resp.StatusCode)
+	}
+}
+
+func TestIntegration_RejectsMalformedJobID(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 23)
+	client := env.clientFor(certPEM, keyPEM)
+
+	resp, err := client.Get(env.server.URL + "/v1/jobs/not-a-real-job-id")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for a malformed job_id", resp.StatusCode)
+	}
+}
+
+func TestIntegration_RejectsTooManyParameters(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 24)
+	client := env.clientFor(certPEM, keyPEM)
+
+	var sb strings.Builder
+	sb.WriteString(`{"parameters":{`)
+	for i := 0; i < 100; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, `"p%d":"x"`, i)
+	}
+	sb.WriteString("}}")
+
+	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json", strings.NewReader(sb.String()))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for exceeding the per-request parameter count cap", resp.StatusCode)
+	}
+}
+
+func TestIntegration_WrongMethodIsRejected(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 25)
+	client := env.clientFor(certPEM, keyPEM)
+
+	req, err := http.NewRequest(http.MethodDelete, env.server.URL+"/v1/actions/backend.deploy", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", resp.StatusCode)
 	}
 }

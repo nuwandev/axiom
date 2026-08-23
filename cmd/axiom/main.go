@@ -60,10 +60,21 @@ func run() error {
 
 	addr := net.JoinHostPort(cfg.ListenAddress, fmt.Sprintf("%d", cfg.ListenPort))
 	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           server.Handler(),
-		TLSConfig:         tlsConfig,
+		Addr:      addr,
+		Handler:   server.Handler(),
+		TLSConfig: tlsConfig,
+		// Bounds on a single connection's lifecycle. WriteTimeout is safe
+		// to keep short: every response Axiom sends is small JSON written
+		// immediately (POST /v1/actions/{action} returns 202 before the
+		// action even starts running — action execution itself is
+		// unaffected by this, since it continues in the background against
+		// its own per-action config.Action.Timeout regardless of what
+		// happens to the HTTP connection that triggered it).
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    32 * 1024,
 	}
 
 	listener, err := tls.Listen("tcp", addr, tlsConfig)

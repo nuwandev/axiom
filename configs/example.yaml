@@ -20,6 +20,16 @@ security:
 audit:
   path: /var/log/axiom/audit.log
 
+# Both optional; shown here at their built-in defaults.
+output:
+  max_bytes: 2097152   # 2 MiB cap on captured stdout/stderr, per stream, per job
+
+jobs:
+  max_history: 1000    # in-memory job count kept for GET /v1/jobs/{id}; oldest
+                        # finished job is evicted once this is exceeded. This is
+                        # not a durable store — job history is lost on restart.
+                        # The audit log is the durable execution record.
+
 actions:
   backend.deploy:
     command: /opt/axiom/actions/backend-deploy.sh

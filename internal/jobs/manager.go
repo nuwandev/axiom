@@ -1,9 +1,11 @@
 package jobs
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -23,20 +25,35 @@ var (
 	ErrActionBusy       = fmt.Errorf("action is already running (exclusive concurrency)")
 )
 
-// MaxOutputBytesDefault is used when the caller doesn't override it.
+// MaxOutputBytesDefault is used by callers (tests, mainly) that don't wire a
+// config-derived limit through NewManager's cfg argument.
 const MaxOutputBytesDefault = 2 * 1024 * 1024
+
+// DefaultMaxJobHistory bounds in-memory job retention when the caller
+// doesn't set cfg.MaxJobHistory (e.g. config built directly in tests).
+const DefaultMaxJobHistory = 1000
 
 // Manager owns the in-memory job store, per-action exclusive-run locks, and
 // wires job execution to the executor and audit packages.
+//
+// The job store is memory-only and bounded: it exists so a caller can poll
+// recent job status/logs, not as a durable execution record. It is dropped
+// on process restart, and once more than maxHistory jobs have been created
+// the oldest *terminal* job is evicted to make room for a new one — a
+// currently running job is never evicted. The audit log (internal/audit) is
+// the durable, restart-surviving record of what ran.
 type Manager struct {
 	cfg    *config.Config
 	audit  *audit.Logger
 	logger *slog.Logger
 
 	maxOutputBytes int
+	maxHistory     int
 
-	mu   sync.Mutex
-	jobs map[string]*Job
+	mu       sync.Mutex
+	jobs     map[string]*Job
+	byInsert *list.List // list.Element.Value is a jobID (string), oldest at Front
+	elemOf   map[string]*list.Element
 
 	exclusiveMu sync.Mutex
 	exclusive   map[string]*sync.Mutex
@@ -44,12 +61,23 @@ type Manager struct {
 
 // NewManager builds a job manager bound to cfg's actions.
 func NewManager(cfg *config.Config, auditLogger *audit.Logger, logger *slog.Logger) *Manager {
+	maxOutputBytes := cfg.MaxOutputBytes
+	if maxOutputBytes == 0 {
+		maxOutputBytes = MaxOutputBytesDefault
+	}
+	maxHistory := cfg.MaxJobHistory
+	if maxHistory == 0 {
+		maxHistory = DefaultMaxJobHistory
+	}
 	return &Manager{
 		cfg:            cfg,
 		audit:          auditLogger,
 		logger:         logger,
-		maxOutputBytes: MaxOutputBytesDefault,
+		maxOutputBytes: maxOutputBytes,
+		maxHistory:     maxHistory,
 		jobs:           make(map[string]*Job),
+		byInsert:       list.New(),
+		elemOf:         make(map[string]*list.Element),
 		exclusive:      make(map[string]*sync.Mutex),
 	}
 }
@@ -76,6 +104,37 @@ func (m *Manager) Logs(jobID string) (stdout, stderr []byte, stdoutTruncated, st
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.stdout, j.stderr, j.stdoutTrunc, j.stderrTrunc, true
+}
+
+// recordJob inserts job into the store and, if that pushes the store over
+// maxHistory, evicts the oldest job currently in a terminal state. If every
+// stored job is still running/queued (all below maxHistory concurrently
+// active — an operational anomaly, not expected in practice) the store is
+// allowed to exceed maxHistory rather than evict live work.
+func (m *Manager) recordJob(job *Job) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.jobs[job.ID] = job
+	m.elemOf[job.ID] = m.byInsert.PushBack(job.ID)
+
+	if len(m.jobs) <= m.maxHistory {
+		return
+	}
+	for e := m.byInsert.Front(); e != nil; e = e.Next() {
+		id := e.Value.(string)
+		j, ok := m.jobs[id]
+		if !ok {
+			continue
+		}
+		if !j.Snapshot().Status.terminal() {
+			continue
+		}
+		delete(m.jobs, id)
+		delete(m.elemOf, id)
+		m.byInsert.Remove(e)
+		return
+	}
 }
 
 // validateParameters checks requested params against the action's declared
@@ -145,9 +204,7 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 		status:      StatusQueued,
 	}
 
-	m.mu.Lock()
-	m.jobs[job.ID] = job
-	m.mu.Unlock()
+	m.recordJob(job)
 
 	if err := m.audit.Write(audit.Record{
 		Event:      audit.EventAccepted,
@@ -162,9 +219,7 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 		if lock != nil {
 			lock.Unlock()
 		}
-		m.mu.Lock()
-		delete(m.jobs, job.ID)
-		m.mu.Unlock()
+		m.removeJob(job.ID)
 		return nil, fmt.Errorf("audit log unavailable, refusing to start job: %w", err)
 	}
 
@@ -174,6 +229,16 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 	go m.run(runCtx, job, action, lock)
 
 	return job, nil
+}
+
+func (m *Manager) removeJob(jobID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.jobs, jobID)
+	if e, ok := m.elemOf[jobID]; ok {
+		m.byInsert.Remove(e)
+		delete(m.elemOf, jobID)
+	}
 }
 
 func (m *Manager) lockFor(action string) *sync.Mutex {
@@ -200,6 +265,28 @@ func (m *Manager) run(ctx context.Context, job *Job, action *config.Action, lock
 		}
 	}
 	defer unlock()
+
+	// A goroutine panic is NOT recoverable by any other goroutine — left
+	// unhandled it takes down the entire agent process, killing every other
+	// in-flight and future job. Recover here, record the job as failed with
+	// the panic detail, and always emit the finished-audit record so the
+	// failure is never silent.
+	defer func() {
+		if r := recover(); r != nil {
+			job.setFinished(StatusFailed, nil, fmt.Sprintf("internal panic: %v", r))
+			m.logger.Error("recovered panic in job execution", "job_id", job.ID, "action", job.Action, "panic", r, "stack", string(debug.Stack()))
+			if err := m.audit.Write(audit.Record{
+				Event:    audit.EventFinished,
+				JobID:    job.ID,
+				Identity: job.RequestedBy,
+				Action:   job.Action,
+				Result:   string(StatusFailed),
+				Reason:   fmt.Sprintf("internal panic: %v", r),
+			}); err != nil {
+				m.logger.Error("audit write failed for panic-recovery job completion", "job_id", job.ID, "error", err)
+			}
+		}
+	}()
 
 	job.setRunning()
 	if err := m.audit.Write(audit.Record{
