@@ -59,6 +59,12 @@ been confirmed before asserting otherwise in an issue or PR.
 
 GitHub Actions runs `gofmt -l .`, `go build ./...`, `go vet ./...`,
 `go test ./...`, and `go test ./... -race` on every push/PR
-(`.github/workflows/ci.yml`), plus CodeQL static analysis
-(`.github/workflows/codeql.yml`). CI does not run the RHEL validation
-tier — that stays a deliberate, manual, pre-release step.
+(`.github/workflows/ci.yml`). CI does not run the RHEL validation tier —
+that stays a deliberate, manual, pre-release step.
+
+CodeQL static analysis (`.github/workflows/codeql.yml.disabled`) is
+prepared but currently disabled: code scanning on a private repository
+requires GitHub Advanced Security, which isn't purchased for this
+account, and it's free on public repos with no config change needed. Once
+this repository is public, `git mv codeql.yml.disabled codeql.yml`
+re-enables it.

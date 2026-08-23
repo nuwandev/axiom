@@ -1,3 +1,15 @@
+# DISABLED: not picked up by GitHub Actions as-is (needs the .yml/.yaml
+# extension directly in .github/workflows/ to run).
+#
+# CodeQL/code scanning requires GitHub Advanced Security on a private
+# repository, which isn't purchased for this account -- confirmed via
+# `gh api -X PATCH repos/<owner>/<repo> -f
+# security_and_analysis[advanced_security][status]=enabled` returning
+# "Advanced security has not been purchased." (422). It's free on public
+# repos with no config change needed.
+#
+# To re-enable once this repo is public: `git mv codeql.yml.disabled
+# codeql.yml`.
 name: CodeQL
 
 on:
