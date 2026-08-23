@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
   security-events: write
+  actions: read # required by codeql-action/analyze to fetch workflow-run
+                # status for its SARIF category/telemetry step -- without
+                # it, analyze fails late with "Resource not accessible by
+                # integration" even though the scan itself completed fine
 
 jobs:
   analyze:
