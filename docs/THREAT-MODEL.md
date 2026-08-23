@@ -237,30 +237,60 @@ alert or roll back. Axiom does not attempt automatic rollback orchestration
 
 ## 13. Axiom restart or crash during a job
 
-**Can:** the axiom process is killed (crash, OOM, `systemctl restart`,
-host reboot) while a job is `running`.
-**Effect:** the child process being executed is in its own process group,
-started via `os/exec` from the axiom process — it is not guaranteed to be
-killed just because axiom itself died (no PR_SET_PDEATHSIG or equivalent is
-set in v1), so a long-running deploy script could, in principle, keep
-running orphaned after axiom exits. The in-memory job record for it is
-lost (§11 of the install guide) — a caller polling `GET /v1/jobs/{id}`
-after axiom restarts gets `404`, not stale state.
+**Can:** the axiom process is killed (crash, OOM, `kill -9`, host reboot)
+while a job is `running`.
+**Effect, as of the process-lifecycle review:** the child is started with
+`PR_SET_PDEATHSIG=SIGKILL` (`internal/executor` `configureProcessGroup`) —
+the kernel itself kills the *direct* child the instant axiom's process
+terminates, for any reason, with no cooperation required from axiom (it
+still fires even on `kill -9`). This closes the specific orphaned-process
+gap for the common case. Two things this does not, by itself, claim: (a) it
+only guarantees killing the direct child, not further descendants that
+child had already spawned into its own process group before axiom died —
+those become orphans of `init` unless something else catches them; (b) a
+descendant that deliberately escaped the process group (e.g. called
+`setsid()`) is a process-group tool, not a Pdeathsig one, and Pdeathsig
+doesn't reach it either. For the actual deployment target (systemd, see
+`packaging/axiom.service`), (a) and (b) are both additionally covered by
+systemd's default `KillMode=control-group`: when the axiom.service unit
+stops or restarts for any reason, systemd kills every process left in the
+unit's cgroup, including ones a script deliberately detached into a new
+process group — cgroup membership isn't something an unprivileged process
+can escape. Per-job cgroups, which would let *Axiom's own* timeout/
+cancellation code (not just systemd, and not just on axiom's own death)
+reliably reach a script that setsid()'d away, were evaluated and
+deliberately not built: real action scripts here wrap CLI tools
+(docker/kubectl/systemctl/pm2) that don't self-daemonize that way, so the
+added architectural complexity (cgroup creation/delegation/ownership for an
+unprivileged service account) wasn't justified by the actual risk. The
+in-memory job record for an in-flight job is still lost on restart (§11 of
+the install guide) — a caller polling `GET /v1/jobs/{id}` afterward gets
+`404`, not stale state.
 **What's durable regardless:** the audit log already has the `accepted` and
 `started` records for that job (both written synchronously before/at
 execution start) — an operator can see from the audit trail that a job was
 in flight when the crash happened, even though no `finished` record was
-ever written for it. This is stated plainly rather than glossed over: v1
-does not reconcile in-flight jobs on restart, and does not guarantee killing
-orphaned children on crash. If your action scripts are not safely
-re-runnable after an interrupted execution, that's a script-design
-consideration independent of Axiom (the spec's real-health-check guidance
-in §12 above also mitigates this: a caller re-triggering after a restart
-will get an accurate health-checked result either way).
-**Blast radius:** an orphaned child process running to completion
-unsupervised — bounded by whatever that script itself does, same as any
-other unsupervised process; not a security boundary bypass, since the
-script was legitimately authorized to run when it started.
+ever written for it. v1 does not reconcile in-flight jobs on restart. If
+your action scripts are not safely re-runnable after an interrupted
+execution, that's a script-design consideration independent of Axiom (the
+spec's real-health-check guidance in §12 above also mitigates this: a
+caller re-triggering after a restart will get an accurate health-checked
+result either way).
+**Blast radius:** with the fix, a direct-child action process cannot
+outlive axiom's own unexpected death; under the systemd deployment target,
+neither can any descendant, including ones that changed process group.
+Outside that target (e.g. axiom run manually, not via systemd), a
+grandchild already detached into its own process group before axiom died
+remains a documented residual gap, bounded by whatever that process itself
+does — not a security boundary bypass, since it was legitimately authorized
+to run when it started.
+
+**Verification:** `internal/executor/executor_test.go` —
+`TestConfigureProcessGroup_PdeathsigKillsChildIfParentDiesUnexpectedly`
+demonstrates the actual failure mode (a re-exec'd helper process stands in
+for Axiom, starts a grandchild, is then killed with SIGKILL exactly like a
+crash/OOM would) and confirms the grandchild dies within milliseconds with
+no cooperation from the dying parent.
 
 ---
 
@@ -290,3 +320,21 @@ script was legitimately authorized to run when it started.
   fixed strong suite set by design of the standard library).
 - `http.Server` now sets `ReadTimeout`/`WriteTimeout`/`IdleTimeout`/
   `MaxHeaderBytes`, previously only `ReadHeaderTimeout` was set.
+
+### Process-lifecycle review (follow-up pass)
+
+- Timeout/cancellation now sends SIGTERM to the whole process group first,
+  waits a bounded `TerminationGracePeriod` (5s), and only then escalates to
+  SIGKILL — previously it went straight to SIGKILL with no chance for a
+  script to clean up. Still fully bounded: a script that ignores SIGTERM
+  cannot outlive the timeout by more than the grace period.
+- The child process is now started with `PR_SET_PDEATHSIG=SIGKILL`, so the
+  kernel kills it automatically if axiom's own process ever disappears
+  without a controlled shutdown — see §13 above for the full analysis,
+  including what this does and doesn't cover on its own versus under the
+  systemd deployment target.
+- Per-job cgroup management was considered, to let Axiom's own kill logic
+  (not just systemd) reach a descendant that escaped its process group via
+  `setsid()`, and deliberately not built — disproportionate complexity for
+  a failure mode that doesn't match how the actual target action scripts
+  (docker/kubectl/systemctl/pm2 CLI wrappers) behave.

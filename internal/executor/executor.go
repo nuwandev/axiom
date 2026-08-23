@@ -1,6 +1,9 @@
 // Package executor runs configured action scripts as child processes with
-// enforced timeouts (full process-tree termination), bounded output
-// capture, and cooperative cancellation.
+// enforced timeouts and cancellation (SIGTERM to the whole process group,
+// a bounded grace period, then SIGKILL if it's still alive), a
+// PR_SET_PDEATHSIG safety net so the direct child can't outlive an
+// unexpected death of the Axiom process itself, and bounded output
+// capture.
 package executor
 
 import (
@@ -32,6 +35,13 @@ type Spec struct {
 	// process itself is not throttled or blocked).
 	MaxOutputBytes int
 }
+
+// TerminationGracePeriod is how long a timed-out or cancelled process group
+// is given to exit after SIGTERM before Run escalates to SIGKILL. This is a
+// fixed internal constant, not user-configurable: it exists purely to give
+// a well-behaved script a bounded chance to clean up (e.g. a partially
+// applied change), not as a tunable product surface.
+const TerminationGracePeriod = 5 * time.Second
 
 // Result is the outcome of a completed (or killed) execution.
 type Result struct {
@@ -87,12 +97,27 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 	case runErr = <-waitErr:
 		// Process finished on its own before the deadline/cancellation.
 	case <-timeoutCtx.Done():
-		killProcessGroup(cmd)
-		<-waitErr // reap regardless; ignore the exit error from a killed process
 		if ctx.Err() != nil {
 			result.Cancelled = true
 		} else {
 			result.TimedOut = true
+		}
+
+		// Ask the whole process group to exit cleanly first (SIGTERM), so
+		// a well-behaved script gets a bounded chance to clean up (e.g. an
+		// in-progress docker/compose operation) instead of always being
+		// SIGKILLed mid-step. A script that ignores SIGTERM, or a group
+		// that's still alive once TerminationGracePeriod elapses, is then
+		// force-killed — this is a bound, not an indefinite grace period,
+		// so a hung/ignoring script still cannot outlive the timeout by
+		// more than TerminationGracePeriod.
+		terminateProcessGroup(cmd)
+		select {
+		case <-waitErr:
+			// Exited on its own in response to SIGTERM.
+		case <-time.After(TerminationGracePeriod):
+			killProcessGroup(cmd)
+			<-waitErr // reap regardless; ignore the exit error from a killed process
 		}
 	}
 
