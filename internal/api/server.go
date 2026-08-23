@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"os"
 
-	"axiom/internal/audit"
-	"axiom/internal/auth"
-	"axiom/internal/config"
-	"axiom/internal/jobs"
+	"github.com/nuwandev/axiom/internal/audit"
+	"github.com/nuwandev/axiom/internal/auth"
+	"github.com/nuwandev/axiom/internal/config"
+	"github.com/nuwandev/axiom/internal/jobs"
 )
 
 // Version is the agent's build version, surfaced on /health.

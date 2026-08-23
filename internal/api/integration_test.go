@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"axiom/internal/audit"
-	"axiom/internal/config"
-	"axiom/internal/jobs"
+	"github.com/nuwandev/axiom/internal/audit"
+	"github.com/nuwandev/axiom/internal/config"
+	"github.com/nuwandev/axiom/internal/jobs"
 )
 
 // testEnv wires a real mTLS listener in front of a real Server, using

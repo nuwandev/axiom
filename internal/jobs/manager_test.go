@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"axiom/internal/audit"
-	"axiom/internal/config"
+	"github.com/nuwandev/axiom/internal/audit"
+	"github.com/nuwandev/axiom/internal/config"
 	"log/slog"
 )
 

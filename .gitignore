@@ -5,6 +5,10 @@
 *.out
 vendor/
 
+# Release build output (scripts/build-release.sh) — attached to GitHub
+# Releases, not committed to the repo.
+/dist/
+
 # Local secrets/certs — never commit real material
 *.pem
 *.key

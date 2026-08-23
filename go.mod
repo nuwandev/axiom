@@ -1,4 +1,4 @@
-module axiom
+module github.com/nuwandev/axiom
 
 go 1.23
 

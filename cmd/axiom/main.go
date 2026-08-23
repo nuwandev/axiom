@@ -16,11 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	"axiom/internal/api"
-	"axiom/internal/audit"
-	"axiom/internal/config"
-	"axiom/internal/jobs"
+	"github.com/nuwandev/axiom/internal/api"
+	"github.com/nuwandev/axiom/internal/audit"
+	"github.com/nuwandev/axiom/internal/config"
+	"github.com/nuwandev/axiom/internal/jobs"
 )
+
+// commit is set via -ldflags at release build time (see scripts/build-release.sh).
+var commit = "unknown"
 
 func main() {
 	if err := run(); err != nil {
@@ -31,7 +34,13 @@ func main() {
 
 func run() error {
 	configPath := flag.String("config", "/etc/axiom/config.yaml", "path to agent configuration file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("axiom %s (%s)\n", api.Version, commit)
+		return nil
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 

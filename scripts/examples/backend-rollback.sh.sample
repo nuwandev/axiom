@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Example action script for an action configured as:
+#
+#   backend.rollback:
+#     command: /opt/axiom/actions/backend-rollback.sh
+#     timeout: 10m
+#     concurrency: exclusive
+#     parameters:
+#       image_tag: { type: string, pattern: '^[a-zA-Z0-9._-]{1,128}$', required: true }
+#
+# Rollback is deliberately the same shape as deploy (see
+# backend-deploy.sh.sample): the caller supplies the previously-known-good
+# image_tag explicitly rather than Axiom trying to remember or infer it.
+# There is no "undo last deploy" state kept anywhere in Axiom — the caller
+# (your CI pipeline) is expected to track what the previous good tag was
+# and pass it back here.
+#
+# Install this at the exact path referenced by `command:`, owned by root
+# (or the account Axiom runs as) with mode 0750 (no group/world write) —
+# Axiom refuses to start if that isn't true.
+set -euo pipefail
+
+: "${AXIOM_PARAM_IMAGE_TAG:?AXIOM_PARAM_IMAGE_TAG is required}"
+
+COMPOSE_FILE=/opt/example-app/docker-compose.backend.yml
+ENV_FILE=/opt/example-app/.env
+
+echo "rolling back to image_tag=${AXIOM_PARAM_IMAGE_TAG}"
+
+IMAGE_TAG="$AXIOM_PARAM_IMAGE_TAG" docker compose \
+  -f "$COMPOSE_FILE" \
+  --env-file "$ENV_FILE" \
+  pull
+
+IMAGE_TAG="$AXIOM_PARAM_IMAGE_TAG" docker compose \
+  -f "$COMPOSE_FILE" \
+  --env-file "$ENV_FILE" \
+  up -d
+
+for i in $(seq 1 30); do
+  if docker compose -f "$COMPOSE_FILE" ps --status running | grep -q backend; then
+    echo "backend is running"
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "backend did not become healthy after rollback" >&2
+exit 1

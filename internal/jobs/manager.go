@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"axiom/internal/audit"
-	"axiom/internal/config"
-	"axiom/internal/executor"
+	"github.com/nuwandev/axiom/internal/audit"
+	"github.com/nuwandev/axiom/internal/config"
+	"github.com/nuwandev/axiom/internal/executor"
 )
 
 // Sentinel errors returned by Manager.Trigger. The API layer maps these to

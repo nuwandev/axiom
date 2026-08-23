@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"axiom/internal/audit"
-	"axiom/internal/jobs"
+	"github.com/nuwandev/axiom/internal/audit"
+	"github.com/nuwandev/axiom/internal/jobs"
 )
 
 // actionNamePattern mirrors config's action-name charset (see

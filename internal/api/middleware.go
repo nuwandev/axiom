@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"axiom/internal/audit"
-	"axiom/internal/auth"
+	"github.com/nuwandev/axiom/internal/audit"
+	"github.com/nuwandev/axiom/internal/auth"
 )
 
 type contextKey int
