@@ -6,6 +6,40 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [1.0.1] — 2026-08-24
+
+Documentation/tooling patch release. No Axiom binary/API/runtime changes —
+the released Go binary is functionally identical to v1.0.0.
+
+### Fixed
+- `scripts/install.sh` computed its systemd-unit source path relative to
+  its own location, assuming a full repository checkout (`scripts/install.sh`
+  next to a sibling `packaging/` directory). This broke the newly-documented
+  "download just the release binary + install script" flow (see Added
+  below): run standalone, it looked in the wrong directory and failed with
+  "systemd unit not found." Now overridable via `SYSTEMD_UNIT_SRC`
+  (matching the existing `BIN_SRC` pattern), defaulting to the prior
+  behavior when unset so a repo-checkout install is unaffected. Verified
+  by actually running both a fresh install and an idempotent re-run
+  against a real Rocky Linux 9 systemd host using the documented flat
+  two-file layout.
+
+### Added
+- `docs/INSTALL.md` §4 now documents two explicit install paths: 4a,
+  downloading the release binary plus two small text files
+  (`install.sh`, `packaging/axiom.service`) directly from the tagged
+  release via `curl` — no Git, no Go, no repository checkout needed on
+  the target server; and 4b, the existing from-source build. §6 gained
+  the equivalent `curl` option for `configs/example.yaml`.
+- `postman/Axiom.postman_collection.json` and `docs/postman-testing.md`:
+  a Postman collection covering all four API endpoints plus five negative
+  tests (unauthenticated, unauthorized action, nonexistent action, missing
+  required parameter, invalid parameter) for manual verification of the
+  security model, with a guide covering import, `base_url`, and Postman's
+  client-certificate/mTLS configuration (including its one real
+  limitation: certificates are configured app-wide per-domain, not
+  per-request or per-collection, so they can't ship inside the file).
+
 ## [1.0.0] — 2026-08-23
 
 Initial public release. Linux/RHEL-family, systemd-managed deployment,
