@@ -116,11 +116,13 @@ chmod +x axiom-v1.0.0-linux-amd64
 # the installer and systemd unit are small text files pulled directly from
 # the tagged release, not the whole repo
 curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v1.0.0/scripts/install.sh
-mkdir -p packaging
-curl -Lo packaging/axiom.service https://raw.githubusercontent.com/nuwandev/axiom/v1.0.0/packaging/axiom.service
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v1.0.0/packaging/axiom.service
 chmod +x install.sh
 
-sudo BIN_SRC=./axiom-v1.0.0-linux-amd64 ./install.sh
+# SYSTEMD_UNIT_SRC is required here: install.sh's default path assumes it's
+# still sitting inside the repo's scripts/ directory next to a sibling
+# packaging/ directory, which isn't true for a standalone download like this.
+sudo BIN_SRC=./axiom-v1.0.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
 ```
 
 Always verify the checksum (`sha256sum -c`) before running anything you

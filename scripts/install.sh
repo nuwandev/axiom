@@ -32,8 +32,16 @@ CERTS_DIR="${ETC_DIR}/certs"
 ACTIONS_DIR="/opt/axiom/actions"
 LOG_DIR="/var/log/axiom"
 STATE_DIR="/var/lib/axiom" # also used as $HOME for the axiom account (see packaging/axiom.service)
-SYSTEMD_UNIT_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packaging/axiom.service"
 SYSTEMD_UNIT_DEST="/etc/systemd/system/axiom.service"
+
+# Default assumes the repo's own layout (this script at scripts/install.sh,
+# the unit at packaging/axiom.service, one level up from here). Override
+# with SYSTEMD_UNIT_SRC=/path/to/axiom.service when this script has been
+# downloaded standalone (e.g. alongside a release binary, with no full
+# repository checkout) and that sibling-directory assumption doesn't hold.
+if [[ -z "${SYSTEMD_UNIT_SRC:-}" ]]; then
+	SYSTEMD_UNIT_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packaging/axiom.service"
+fi
 
 log() { printf '[install] %s\n' "$1"; }
 fail() { printf '[install] ERROR: %s\n' "$1" >&2; exit 1; }
@@ -53,7 +61,7 @@ if [[ ! -f "$BIN_SRC" ]]; then
 fi
 
 if [[ ! -f "$SYSTEMD_UNIT_SRC" ]]; then
-	fail "systemd unit not found at '$SYSTEMD_UNIT_SRC'"
+	fail "systemd unit not found at '$SYSTEMD_UNIT_SRC' (set SYSTEMD_UNIT_SRC=/path/to/axiom.service to override)"
 fi
 
 # --- Service account ---------------------------------------------------------
