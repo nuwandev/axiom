@@ -22,9 +22,12 @@ you should check on your own enforcing host before going live.
 
 - A RHEL-family host with systemd.
 - Root (or sudo) access on that host, for the one-time install.
-- The `axiom` binary for linux/amd64 (or linux/arm64), built from this
-  repository (`go build ./cmd/axiom`) or obtained from your internal build
-  pipeline.
+- The `axiom` binary for linux/amd64 or linux/arm64 — downloaded from
+  [Releases](https://github.com/nuwandev/axiom/releases) (most operators;
+  see §4a), built from source (`go build ./cmd/axiom`; §4b), or obtained
+  from your internal build pipeline. The target server itself needs none
+  of Go, Git, or a repository checkout — just the binary plus the two
+  small files §4a fetches alongside it.
 - An internal CA and the ability to issue:
   - one server certificate for this Axiom agent (Subject/SAN matching how
     clients will reach it),
@@ -97,10 +100,45 @@ document why — don't broaden it "just in case."
 
 ## 4. Running the installer
 
+The target server needs the binary, `scripts/install.sh`, and
+`packaging/axiom.service` — nothing else. It does **not** need Go, Git, or
+a full checkout of this repository.
+
+### 4a. From a downloaded release (no repository checkout needed)
+
 ```bash
-# from a checkout of this repository, after `go build ./cmd/axiom`
+# pick the asset matching your server's CPU
+curl -LO https://github.com/nuwandev/axiom/releases/download/v1.0.0/axiom-v1.0.0-linux-amd64
+curl -LO https://github.com/nuwandev/axiom/releases/download/v1.0.0/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+chmod +x axiom-v1.0.0-linux-amd64
+
+# the installer and systemd unit are small text files pulled directly from
+# the tagged release, not the whole repo
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v1.0.0/scripts/install.sh
+mkdir -p packaging
+curl -Lo packaging/axiom.service https://raw.githubusercontent.com/nuwandev/axiom/v1.0.0/packaging/axiom.service
+chmod +x install.sh
+
+sudo BIN_SRC=./axiom-v1.0.0-linux-amd64 ./install.sh
+```
+
+Always verify the checksum (`sha256sum -c`) before running anything you
+downloaded — the step above isn't optional.
+
+### 4b. From a source checkout
+
+```bash
+git clone https://github.com/nuwandev/axiom.git
+cd axiom
+go build -o axiom ./cmd/axiom
 sudo BIN_SRC=./axiom ./scripts/install.sh
 ```
+
+Only needed if you're building from source (e.g. an unreleased commit, or
+your own fork) — most operators want 4a.
+
+### What the installer does
 
 The script is idempotent — safe to re-run. It creates the service account,
 the filesystem layout in §2, installs the binary and systemd unit, and
@@ -159,7 +197,13 @@ listener address/port, the action set this specific agent exposes, and
 which client identities may call which actions.
 
 ```bash
+# from a repo checkout:
 sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yaml
+
+# or, on a server with no checkout (matches §4a):
+curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom/v1.0.0/configs/example.yaml
+sudo install -o root -g axiom -m 0640 config.yaml /etc/axiom/config.yaml
+
 sudo vi /etc/axiom/config.yaml
 ```
 
