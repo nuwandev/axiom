@@ -45,6 +45,15 @@ jobs:
   rpm-package-smoke-test:
     name: RPM package builds
     runs-on: ubuntu-latest
+    env:
+      # Pinned, not "latest": nfpm's own go.mod can require a newer Go
+      # toolchain than this project targets (hit exactly that with
+      # `go install nfpm@latest` — it started requiring Go 1.26 while this
+      # project stays on 1.23 to match go.mod). Downloading the prebuilt
+      # binary release sidesteps that entirely: it doesn't matter what Go
+      # version compiled nfpm itself, only what compiled Axiom. Bump this
+      # deliberately when there's a reason to, not automatically.
+      NFPM_VERSION: "2.47.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -53,11 +62,14 @@ jobs:
           go-version: "1.23"
           check-latest: true
 
-      - name: install nfpm and rpm inspection tools
+      - name: install nfpm (prebuilt binary) and rpm inspection tools
         run: |
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          curl -sL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
+            | tar -xz -C /usr/local/bin nfpm
+          chmod +x /usr/local/bin/nfpm
+          nfpm --version
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rpm2cpio cpio gettext-base
+          sudo apt-get install -y --no-install-recommends rpm gettext-base
 
       - name: build a throwaway linux/amd64 binary
         run: |
@@ -69,11 +81,11 @@ jobs:
           VERSION=0.0.0-ci GOARCH=amd64 BIN_PATH=/tmp/axiom-smoke-test \
             envsubst '${VERSION} ${GOARCH} ${BIN_PATH}' < packaging/rpm/nfpm.yaml.tmpl > "$GENERATED_SPEC"
           cd packaging/rpm
-          "$(go env GOPATH)/bin/nfpm" package --config "$GENERATED_SPEC" --target /tmp/ --packager rpm
+          nfpm package --config "$GENERATED_SPEC" --target /tmp/ --packager rpm
 
       - name: sanity-check the package contents
         run: |
-          rpm2cpio /tmp/axiom-0.0.0~ci-1.x86_64.rpm | cpio -t --quiet > /tmp/rpm-contents.txt
+          rpm -qlp /tmp/axiom-0.0.0~ci-1.x86_64.rpm > /tmp/rpm-contents.txt
           grep -qx '/usr/local/bin/axiom' /tmp/rpm-contents.txt
           grep -qx '/etc/systemd/system/axiom.service' /tmp/rpm-contents.txt
           echo "RPM contents look correct:"

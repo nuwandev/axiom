@@ -23,7 +23,11 @@ NFPM_BIN="${NFPM_BIN:-nfpm}"
 BUILD_RPMS=1
 if ! command -v "$NFPM_BIN" >/dev/null 2>&1; then
   echo "WARNING: '$NFPM_BIN' not found — skipping RPM packages (binaries/checksums still built)."
-  echo "  install: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest"
+  echo "  install: download the prebuilt binary from"
+  echo "  https://github.com/goreleaser/nfpm/releases/latest (nfpm_*_Linux_x86_64.tar.gz)"
+  echo "  and put it on PATH. Avoid 'go install .../nfpm@latest' here — nfpm's"
+  echo "  own go.mod can require a newer Go toolchain than this project's (it did,"
+  echo "  once, in this project's CI); the prebuilt binary sidesteps that entirely."
   BUILD_RPMS=0
 elif ! command -v envsubst >/dev/null 2>&1; then
   echo "WARNING: 'envsubst' not found — skipping RPM packages (binaries/checksums still built)."
