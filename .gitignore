@@ -16,6 +16,10 @@ vendor/
 /etc/axiom/
 certs/
 
+# Private UAT lab deployment kit — project-specific (real paths, service
+# names). Never goes to the public repo.
+/uat-lab/
+
 # Editor/OS
 .vscode/
 .idea/

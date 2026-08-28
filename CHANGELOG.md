@@ -6,6 +6,40 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [1.1.0] — 2026-08-29
+
+Packaging release. No Axiom binary/API/runtime changes — the released Go
+binary is functionally identical to v1.0.1.
+
+### Added
+- RPM packaging for RHEL/Rocky/AlmaLinux/CentOS Stream
+  (`packaging/rpm/nfpm.yaml.tmpl` + scriptlets, built via
+  [`nfpm`](https://nfpm.goreleaser.com)): `sudo dnf install axiom-<version>.x86_64.rpm`
+  does the same thing `scripts/install.sh` does (service account,
+  filesystem layout, binary, systemd unit — no certificates or config
+  touched, service not auto-started), but with real `dnf upgrade` /
+  `dnf remove` support instead of a manual uninstall doc section. A
+  running instance is not disrupted by an upgrade transaction (verified:
+  same PID throughout, new binary takes effect on the next
+  `systemctl restart`); a real removal correctly stops/disables the
+  service and removes the binary/unit while deliberately leaving
+  `/etc/axiom`, `/opt/axiom`, `/var/log/axiom`, `/var/lib/axiom`, and the
+  `axiom` user/group in place, same reasoning `docs/INSTALL.md` §16
+  already documented for the manual path. `scripts/build-release.sh` now
+  also produces `.rpm` packages for both published architectures
+  alongside the existing raw binaries, falling back to binaries-only with
+  a warning if `nfpm`/`envsubst` aren't present on the build machine —
+  the existing binary + `install.sh` path is unchanged and stays fully
+  supported, this is an additional option, not a replacement.
+- `docs/INSTALL.md` §4 restructured into three explicit install paths
+  (4a RPM, 4b downloaded binary, 4c source checkout) and §16 Uninstall
+  now covers both the RPM path and the existing manual path.
+
+### Verified
+- Real install → real startup (mTLS handshake succeeds, correctly rejects
+  an unauthenticated request) → upgrade while running → removal, all run
+  against a genuine systemd-enabled Rocky Linux 9 container, not simulated.
+
 ## [1.0.1] — 2026-08-24
 
 Documentation/tooling patch release. No Axiom binary/API/runtime changes —

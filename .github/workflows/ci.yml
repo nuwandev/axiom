@@ -41,3 +41,40 @@ jobs:
 
       - name: go test -race
         run: go test ./... -race
+
+  rpm-package-smoke-test:
+    name: RPM package builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23"
+          check-latest: true
+
+      - name: install nfpm and rpm inspection tools
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm2cpio cpio gettext-base
+
+      - name: build a throwaway linux/amd64 binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/axiom-smoke-test ./cmd/axiom
+
+      - name: package it as an RPM
+        run: |
+          GENERATED_SPEC="$(mktemp)"
+          VERSION=0.0.0-ci GOARCH=amd64 BIN_PATH=/tmp/axiom-smoke-test \
+            envsubst '${VERSION} ${GOARCH} ${BIN_PATH}' < packaging/rpm/nfpm.yaml.tmpl > "$GENERATED_SPEC"
+          cd packaging/rpm
+          "$(go env GOPATH)/bin/nfpm" package --config "$GENERATED_SPEC" --target /tmp/ --packager rpm
+
+      - name: sanity-check the package contents
+        run: |
+          rpm2cpio /tmp/axiom-0.0.0~ci-1.x86_64.rpm | cpio -t --quiet > /tmp/rpm-contents.txt
+          grep -qx '/usr/local/bin/axiom' /tmp/rpm-contents.txt
+          grep -qx '/etc/systemd/system/axiom.service' /tmp/rpm-contents.txt
+          echo "RPM contents look correct:"
+          cat /tmp/rpm-contents.txt

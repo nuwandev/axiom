@@ -131,6 +131,9 @@ go build -o axiom ./cmd/axiom
 
 # 2. install: creates the service account, directories, binary, systemd unit
 sudo BIN_SRC=./axiom ./scripts/install.sh
+# on RHEL/Rocky/Alma/CentOS Stream, an RPM is also published per release —
+# `sudo dnf install ./axiom-<version>.x86_64.rpm` does the same thing, with
+# `dnf upgrade`/`dnf remove` for upgrades and uninstalls. See docs/INSTALL.md §4.
 
 # 3. provide your own certificates (Axiom never generates these)
 sudo install -o root -g axiom -m 0640 ca.crt server.crt /etc/axiom/certs/

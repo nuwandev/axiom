@@ -98,13 +98,48 @@ document why — don't broaden it "just in case."
 
 ---
 
-## 4. Running the installer
+## 4. Installing
+
+Three ways to get Axiom onto a server, in the order most operators should
+consider them.
+
+### 4a. RPM (recommended — RHEL/Rocky/AlmaLinux/CentOS Stream)
+
+The package manager handles the account, filesystem layout, binary, and
+systemd unit in one step, and gives you real upgrade/uninstall support
+(`dnf upgrade` / `dnf remove`) instead of a manual script:
+
+```bash
+curl -LO https://github.com/nuwandev/axiom/releases/download/v1.0.1/axiom-1.0.1-1.x86_64.rpm
+curl -LO https://github.com/nuwandev/axiom/releases/download/v1.0.1/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+sudo dnf install ./axiom-1.0.1-1.x86_64.rpm
+```
+
+(`aarch64` builds are published alongside the `x86_64` ones for arm64
+servers — pick the asset matching your CPU.)
+
+This does exactly what `install.sh` (4b) does — same account, same
+filesystem layout in §2, same systemd unit — just via RPM scriptlets
+instead of a shell script, and it deliberately makes the same choices:
+does not generate certificates, does not touch `config.yaml`, does not
+start the service. Continue at §5.
+
+**Upgrading**: `sudo dnf upgrade ./axiom-<new-version>.x86_64.rpm` (or from
+a configured repo, `sudo dnf upgrade axiom`) — a running instance is not
+disrupted by the upgrade itself; the new binary takes effect on your next
+`systemctl restart axiom`, same as §13's manual upgrade procedure.
+
+**Uninstalling**: `sudo dnf remove axiom` — stops and disables the
+service, removes the binary and unit. Deliberately leaves `/etc/axiom`,
+`/opt/axiom`, `/var/log/axiom`, `/var/lib/axiom`, and the `axiom`
+user/group in place (§16 covers removing those too, if you want to).
+
+### 4b. From a downloaded binary (no package manager, no repository checkout)
 
 The target server needs the binary, `scripts/install.sh`, and
 `packaging/axiom.service` — nothing else. It does **not** need Go, Git, or
 a full checkout of this repository.
-
-### 4a. From a downloaded release (no repository checkout needed)
 
 ```bash
 # pick the asset matching your server's CPU
@@ -126,9 +161,11 @@ sudo BIN_SRC=./axiom-v1.0.1-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./insta
 ```
 
 Always verify the checksum (`sha256sum -c`) before running anything you
-downloaded — the step above isn't optional.
+downloaded — the step above isn't optional. Prefer this over 4a when you
+want to inspect exactly what runs before running it, or your policy
+doesn't allow installing packages outside a managed repository.
 
-### 4b. From a source checkout
+### 4c. From a source checkout
 
 ```bash
 git clone https://github.com/nuwandev/axiom.git
@@ -138,14 +175,14 @@ sudo BIN_SRC=./axiom ./scripts/install.sh
 ```
 
 Only needed if you're building from source (e.g. an unreleased commit, or
-your own fork) — most operators want 4a.
+your own fork) — most operators want 4a or 4b.
 
-### What the installer does
+### What every install path does
 
-The script is idempotent — safe to re-run. It creates the service account,
-the filesystem layout in §2, installs the binary and systemd unit, and
-**stops there**. It deliberately does not generate certificates, does not
-write a config file if one already exists, and does not start the service.
+All three are idempotent — safe to re-run. Each creates the service
+account, the filesystem layout in §2, installs the binary and systemd
+unit, and **stops there**. None of them generate certificates, write a
+config file if one already exists, or start the service.
 
 ---
 
@@ -511,6 +548,20 @@ kept on disk by Axiom itself.
 ---
 
 ## 16. Uninstall
+
+**Installed via RPM (§4a)**: one command does the service stop/disable and
+binary/unit removal for you —
+
+```bash
+sudo dnf remove axiom
+```
+
+Deliberately leaves `/etc/axiom`, `/opt/axiom`, `/var/log/axiom`,
+`/var/lib/axiom`, and the `axiom` user/group in place — same reasoning as
+below. Run the remaining commands too if you want those gone as well.
+
+**Installed via `install.sh` (§4b/§4c), or to remove what RPM removal
+leaves behind**:
 
 ```bash
 sudo systemctl disable --now axiom

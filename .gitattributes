@@ -1,0 +1,22 @@
+# This project targets Linux servers exclusively — every text file in this
+# repo (Go source, shell scripts, systemd units, YAML, docs) must stay LF
+# regardless of what platform someone develops on. Without this file,
+# core.autocrlf=true on a Windows checkout would silently convert shell
+# scripts and RPM scriptlets to CRLF on the next clone/checkout — which
+# breaks a shebang line's interpreter lookup and would corrupt exactly the
+# scripts this project ships to real RHEL-family servers.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.service text eol=lf
+*.go text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+
+# Binary/generated — never touched by line-ending normalization.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.rpm binary

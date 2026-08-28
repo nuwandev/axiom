@@ -1,0 +1,64 @@
+# nfpm (https://nfpm.goreleaser.com) spec for Axiom's RPM package —
+# targets RHEL/Rocky/AlmaLinux/CentOS Stream, matching every other install
+# path this project supports. Built by scripts/build-release.sh; not
+# meant to be invoked by hand except for local testing.
+#
+# Required environment variables at build time:
+#   VERSION   e.g. 1.1.0  (no leading "v" — RPM version fields don't use one)
+#   GOARCH    amd64 | arm64
+#   BIN_PATH  path to the already-built linux/$GOARCH axiom binary
+name: axiom
+arch: ${GOARCH}
+platform: linux
+version: ${VERSION}
+release: "1"
+section: admin
+priority: optional
+maintainer: nuwandev
+vendor: nuwandev
+homepage: https://github.com/nuwandev/axiom
+license: MIT
+description: |-
+  Secure internal automation agent for Linux servers. Exposes a small,
+  authenticated HTTPS (mTLS) API so CI/CD systems can trigger predefined,
+  server-local actions without SSH. No arbitrary command execution --
+  only named, pre-configured actions.
+
+depends:
+  - systemd
+
+contents:
+  - src: ${BIN_PATH}
+    dst: /usr/local/bin/axiom
+    file_info:
+      mode: 0755
+      owner: root
+      group: root
+
+  - src: ../axiom.service
+    dst: /etc/systemd/system/axiom.service
+    file_info:
+      mode: 0644
+      owner: root
+      group: root
+
+  - src: ../../README.md
+    dst: /usr/share/doc/axiom/README.md
+    file_info:
+      mode: 0644
+      owner: root
+      group: root
+
+scripts:
+  preinstall: ./preinstall.sh
+  postinstall: ./postinstall.sh
+  preremove: ./preremove.sh
+  postremove: ./postremove.sh
+
+rpm:
+  compression: gzip
+  scripts:
+    # RPM-specific scriptlet semantics ($1 argument distinguishing
+    # install/upgrade/removal) are used as-is in the scripts above --
+    # no rpm-specific overrides needed.
+    posttrans: ""

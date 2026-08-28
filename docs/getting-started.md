@@ -31,11 +31,17 @@ Verify the checksum of a downloaded release against the published
 sudo BIN_SRC=./axiom ./scripts/install.sh
 ```
 
-This creates the dedicated `axiom` service account, the directory layout
-under `/etc/axiom`, `/opt/axiom/actions`, `/var/log/axiom`, `/var/lib/axiom`,
-installs the binary to `/usr/local/bin/axiom`, and installs the systemd
-unit. It does **not** generate certificates, write a config if one already
-exists, or start the service — safe to re-run any time.
+On RHEL/Rocky/AlmaLinux/CentOS Stream, `sudo dnf install ./axiom-<version>.x86_64.rpm`
+does the same thing via the package manager instead — see
+[`docs/INSTALL.md`](INSTALL.md) §4 for both paths side by side, including
+upgrade/uninstall.
+
+Either way, this creates the dedicated `axiom` service account, the
+directory layout under `/etc/axiom`, `/opt/axiom/actions`, `/var/log/axiom`,
+`/var/lib/axiom`, installs the binary to `/usr/local/bin/axiom`, and
+installs the systemd unit. It does **not** generate certificates, write a
+config if one already exists, or start the service — safe to re-run any
+time.
 
 ## 3. Configure certificates
 
