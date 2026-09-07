@@ -2,6 +2,8 @@
 
 - `install.sh` — the production installer (see [`docs/INSTALL.md`](../docs/INSTALL.md)).
 - `examples/` — sample action scripts referenced from the docs; not installed by default.
+- `build-release.sh` — repeatable release build (linux amd64/arm64 binaries + RPMs + checksums). See [`CONTRIBUTING.md`](../CONTRIBUTING.md#cutting-a-release).
+- `sync-doc-versions.sh` — repoints the version-pinned install commands in `docs/INSTALL.md` at a release tag; `build-release.sh` runs it in `--check` mode so a tagged build can't ship stale pins.
 - `wsl-build.sh` — dev helper for cross-building/testing from a Windows host via WSL.
 - `rhel-test-*.sh` — the RHEL validation harness used to exercise a real
   install on a real RHEL-family host (see `docs/THREAT-MODEL.md` and

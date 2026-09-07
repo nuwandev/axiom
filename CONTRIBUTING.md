@@ -44,6 +44,17 @@ means for this project.
 - Describe *why*, not just *what*, especially for anything touching
   security-relevant code paths.
 
+## Cutting a release
+
+1. Update [`CHANGELOG.md`](CHANGELOG.md) — move the pending notes under a new
+   `## [X.Y.Z] — <date>` heading.
+2. Run `scripts/sync-doc-versions.sh vX.Y.Z` to repoint the copy-and-run
+   install commands in `docs/INSTALL.md` at the new tag.
+3. Commit both as `Release vX.Y.Z`, then tag: `git tag vX.Y.Z`.
+4. Build artifacts: `VERSION=vX.Y.Z ./scripts/build-release.sh` — it refuses
+   to run if step 2 was skipped — and attach `dist/vX.Y.Z/*` to the GitHub
+   release.
+
 ## Reporting bugs
 
 Open a GitHub issue with steps to reproduce, your OS/distro, and the Axiom
