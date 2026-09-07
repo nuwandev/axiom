@@ -16,6 +16,13 @@ COMMIT="$(git rev-parse --short HEAD)"
 RPM_VERSION="${VERSION#v}"   # RPM version fields don't use a leading "v"
 REPO_ROOT="$(pwd)"
 
+# For a real release tag (vX.Y.Z), the copy-and-run commands in
+# docs/INSTALL.md must already point at this version — refuse to build
+# otherwise. Non-tag builds (dev snapshots, throwaway versions) skip this.
+if [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  scripts/sync-doc-versions.sh --check "$VERSION"
+fi
+
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
