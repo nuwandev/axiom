@@ -1,0 +1,111 @@
+name: Release
+
+# Builds every published artifact (linux/amd64, linux/arm64 + RPMs,
+# windows/amd64 + offline install bundle) with scripts/build-release.sh and
+# publishes them to a GitHub Release.
+#
+# Triggered by pushing a vX.Y.Z tag, per CONTRIBUTING.md's "Cutting a
+# release" — build-release.sh itself refuses to run for a real tag unless
+# docs/INSTALL.md's version pins were already synced
+# (scripts/sync-doc-versions.sh), so a release can't ship silently stale
+# download links.
+#
+# workflow_dispatch is a dry run only: it builds and uploads the artifacts
+# as a workflow run artifact so the pipeline itself can be exercised without
+# cutting a real tag or publishing a GitHub Release.
+
+on:
+  push:
+    tags:
+      - "v*.*.*" # e.g. v1.2.3; scripts/sync-doc-versions.sh / build-release.sh enforce the exact vX.Y.Z shape
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build for a dry run, e.g. v0.0.0-dryrun (does not publish a GitHub Release)"
+        required: true
+        default: "v0.0.0-dryrun"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: build release artifacts
+    runs-on: ubuntu-latest
+    env:
+      # Pin the exact toolchain patch version release binaries are built
+      # with, independent of whatever the runner image defaults to.
+      GOTOOLCHAIN: local
+      NFPM_VERSION: "2.47.0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23.12"
+
+      - name: determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: install packaging tools (nfpm, zip, envsubst, wix)
+        run: |
+          curl -sL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
+            | tar -xz -C /usr/local/bin nfpm
+          chmod +x /usr/local/bin/nfpm
+          nfpm --version
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm gettext-base zip
+          # Pinned to v5: v7+ requires accepting a paid Open Source
+          # Maintenance Fee EULA just to build, which this project does not
+          # depend on. WiX v4/v5's dotnet-tool CLI runs cross-platform,
+          # including here on the Linux runner.
+          dotnet tool install --global wix --version 5.0.2
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: go vet / test (release must build clean)
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: build release artifacts
+        run: VERSION=${{ steps.version.outputs.value }} bash scripts/build-release.sh
+
+      - name: upload build artifacts (workflow run, every trigger)
+        uses: actions/upload-artifact@v4
+        with:
+          name: axiom-${{ steps.version.outputs.value }}
+          path: dist/${{ steps.version.outputs.value }}/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: publish to GitHub Releases
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          notes_file="$(mktemp)"
+          # Pull this version's own section out of CHANGELOG.md ("## [X.Y.Z] ..."
+          # up to the next "## [" heading) so the release notes are the notes,
+          # not a changelog dump. Falls back to GitHub's auto-generated notes
+          # if the heading isn't found (e.g. CHANGELOG wasn't updated first).
+          bare="${VERSION#v}"
+          awk -v ver="$bare" '
+            /^## \[/ { if (found) exit; if (index($0, "[" ver "]") > 0) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > "$notes_file"
+          flags=(--title "Axiom ${VERSION}")
+          if [[ -s "$notes_file" ]]; then
+            flags+=(--notes-file "$notes_file")
+          else
+            flags+=(--generate-notes)
+          fi
+          gh release create "$VERSION" "${flags[@]}" -- dist/"${VERSION}"/*

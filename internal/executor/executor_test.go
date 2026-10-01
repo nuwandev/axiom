@@ -26,6 +26,19 @@ func writeScript(t *testing.T, body string) string {
 	return p
 }
 
+// TestBuildCommand_Unix_Unchanged guards the platform-seam refactor: on unix
+// the capability script is still invoked directly, with no wrapper and no
+// extra arguments — byte-identical to exec.Command(spec.Command).
+func TestBuildCommand_Unix_Unchanged(t *testing.T) {
+	cmd := buildCommand(Spec{Command: "/opt/axiom/actions/deploy.sh"})
+	if cmd.Path != "/opt/axiom/actions/deploy.sh" {
+		t.Errorf("Path = %q, want the script path itself", cmd.Path)
+	}
+	if len(cmd.Args) != 1 || cmd.Args[0] != "/opt/axiom/actions/deploy.sh" {
+		t.Errorf("Args = %v, want exactly [the script path]", cmd.Args)
+	}
+}
+
 func TestRun_ExitCodeSuccess(t *testing.T) {
 	script := writeScript(t, "exit 0\n")
 	res, err := Run(context.Background(), Spec{Command: script, Timeout: 5 * time.Second, MaxOutputBytes: 1024})
@@ -179,7 +192,7 @@ sleep 30
 // TestConfigureProcessGroup_PdeathsigKillsChildIfParentDiesUnexpectedly
 // demonstrates the actual failure mode named in the review request — "Axiom
 // is killed and a child process may survive it" — and verifies the fix:
-// the child is configured (via configureProcessGroup, the same helper
+// the child is configured (via newContainment().prepare, the same helper
 // executor.Run uses) with PR_SET_PDEATHSIG=SIGKILL, so the kernel itself
 // kills the child the instant its parent process terminates for any
 // reason, with no cooperation required from the dying parent.
@@ -253,7 +266,7 @@ func TestConfigureProcessGroup_PdeathsigKillsChildIfParentDiesUnexpectedly(t *te
 // point, which is exactly the scenario being verified.
 func runPdeathsigHelper() {
 	cmd := exec.Command("sleep", "30")
-	configureProcessGroup(cmd) // the same SysProcAttr executor.Run uses
+	newContainment().prepare(cmd) // the same SysProcAttr executor.Run uses
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintln(os.Stderr, "helper: starting grandchild:", err)
 		os.Exit(1)

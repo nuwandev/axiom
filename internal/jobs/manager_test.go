@@ -76,6 +76,27 @@ func waitForTerminal(t *testing.T, m *Manager, jobID string, timeout time.Durati
 	return Snapshot{}
 }
 
+// TestBuildEnv_Unix_Unchanged guards the platform-seam refactor: the unix
+// base environment is still exactly the fixed PATH, followed by the
+// job/action identifiers and the parameters — byte-identical to before.
+func TestBuildEnv_Unix_Unchanged(t *testing.T) {
+	env := buildEnv("JID", "act", map[string]string{"k": "v"})
+	want := []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"AXIOM_JOB_ID=JID",
+		"AXIOM_ACTION=act",
+		"AXIOM_PARAM_K=v",
+	}
+	if len(env) != len(want) {
+		t.Fatalf("env = %v, want %v", env, want)
+	}
+	for i := range want {
+		if env[i] != want[i] {
+			t.Errorf("env[%d] = %q, want %q", i, env[i], want[i])
+		}
+	}
+}
+
 func TestManager_TriggerSuccess(t *testing.T) {
 	dir := t.TempDir()
 	script := writeScript(t, dir, "ok.sh", "exit 0\n")

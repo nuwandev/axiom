@@ -1,3 +1,14 @@
+//go:build unix
+
+// This end-to-end suite drives config.Load, which enforces POSIX
+// ownership/mode security on the fixture files it writes to t.TempDir(). The
+// Windows equivalent (internal/winsec ACL semantics) cannot be satisfied by
+// an ordinary temp directory, so this package has 0% automated coverage on
+// GOOS=windows by design (see the "go test" step comment in
+// .github/workflows/ci.yml) -- the mTLS/auth/authz path on Windows is
+// instead covered by the real-host validation pass against a genuinely
+// ACL-configured, protected-directory install; see
+// docs/WINDOWS-SERVER-2022-VALIDATION.md ("mTLS end-to-end").
 package api
 
 import (
@@ -73,7 +84,7 @@ security:` + healthBlock + `
     cert_file: ` + serverCertFile + `
     key_file: ` + serverKeyFile + `
 actions:
-  backend.deploy:
+  sample.action:
     command: ` + script + `
     timeout: 5s
     concurrency: shared
@@ -82,7 +93,7 @@ authorization:
   identities:
     ci-jenkins:
       actions:
-        - backend.deploy
+        - sample.action
 `
 	auditPath := filepath.Join(dir, "audit.log")
 	yamlContent += "\naudit:\n  path: " + auditPath + "\n"
@@ -142,7 +153,7 @@ func TestIntegration_AuthorizedIdentityCanTriggerAllowedAction(t *testing.T) {
 	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 10)
 	client := env.clientFor(certPEM, keyPEM)
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json", nil)
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json", nil)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
@@ -160,7 +171,7 @@ func TestIntegration_UnauthorizedIdentityIsRejected(t *testing.T) {
 	certPEM, keyPEM := env.ca.issue(t, "unknown-identity", x509.ExtKeyUsageClientAuth, 11)
 	client := env.clientFor(certPEM, keyPEM)
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json", nil)
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json", nil)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
@@ -193,7 +204,7 @@ func TestIntegration_UntrustedCertificateIsRejected(t *testing.T) {
 	certPEM, keyPEM := selfSigned(t, "ci-jenkins")
 	client := env.clientFor(certPEM, keyPEM)
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json", nil)
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json", nil)
 	if err == nil {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -209,7 +220,7 @@ func TestIntegration_NoCertificateIsRejectedForNonHealthRoute(t *testing.T) {
 	env := newTestEnv(t, nil)
 	client := env.clientFor(nil, nil)
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json", nil)
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json", nil)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
@@ -274,7 +285,7 @@ func TestIntegration_JobLifecycleAndLogs(t *testing.T) {
 	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 14)
 	client := env.clientFor(certPEM, keyPEM)
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json", nil)
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json", nil)
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
@@ -321,7 +332,7 @@ func TestIntegration_RejectsUnknownJSONFields(t *testing.T) {
 	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 20)
 	client := env.clientFor(certPEM, keyPEM)
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json",
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json",
 		strings.NewReader(`{"parameters":{},"not_a_real_field":true}`))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -337,7 +348,7 @@ func TestIntegration_RejectsWrongContentType(t *testing.T) {
 	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 21)
 	client := env.clientFor(certPEM, keyPEM)
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "text/plain",
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "text/plain",
 		strings.NewReader(`{"parameters":{}}`))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -393,7 +404,7 @@ func TestIntegration_RejectsTooManyParameters(t *testing.T) {
 	}
 	sb.WriteString("}}")
 
-	resp, err := client.Post(env.server.URL+"/v1/actions/backend.deploy", "application/json", strings.NewReader(sb.String()))
+	resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json", strings.NewReader(sb.String()))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}
@@ -408,7 +419,7 @@ func TestIntegration_WrongMethodIsRejected(t *testing.T) {
 	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 25)
 	client := env.clientFor(certPEM, keyPEM)
 
-	req, err := http.NewRequest(http.MethodDelete, env.server.URL+"/v1/actions/backend.deploy", nil)
+	req, err := http.NewRequest(http.MethodDelete, env.server.URL+"/v1/actions/sample.action", nil)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}

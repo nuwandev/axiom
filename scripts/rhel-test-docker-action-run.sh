@@ -14,8 +14,8 @@ wait_terminal() {
   echo "$S (did not reach terminal state)"
 }
 
-echo "=== deploy: trigger backend.deploy (pull + up -d + real health check) ==="
-R=$(curl -s $C -X POST "$B/v1/actions/backend.deploy" -H 'Content-Type: application/json' -d '{"parameters":{"image_tag":"alpine"}}')
+echo "=== deploy: trigger sample.action (pull + up -d + real health check) ==="
+R=$(curl -s $C -X POST "$B/v1/actions/sample.action" -H 'Content-Type: application/json' -d '{"parameters":{"image_tag":"alpine"}}')
 echo "$R"
 JOB=$(echo "$R" | job_id)
 wait_terminal "$JOB"
@@ -26,28 +26,28 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18080/
 
 echo
 echo "=== unhealthy deploy: health check must fail the job, not just the launch command ==="
-R=$(curl -s $C -X POST "$B/v1/actions/backend.deploy-unhealthy")
+R=$(curl -s $C -X POST "$B/v1/actions/sample.action-unhealthy")
 JOB=$(echo "$R" | job_id)
 wait_terminal "$JOB"
 
 echo
 echo "=== rollback: missing required image_tag parameter is rejected ==="
-curl -s -o /dev/null -w '%{http_code}\n' $C -X POST "$B/v1/actions/backend.rollback" -H 'Content-Type: application/json' -d '{"parameters":{}}'
+curl -s -o /dev/null -w '%{http_code}\n' $C -X POST "$B/v1/actions/sample.rollback" -H 'Content-Type: application/json' -d '{"parameters":{}}'
 
 echo "=== rollback: parameter injection attempt rejected ==="
-curl -s -o /dev/null -w '%{http_code}\n' $C -X POST "$B/v1/actions/backend.rollback" -H 'Content-Type: application/json' \
+curl -s -o /dev/null -w '%{http_code}\n' $C -X POST "$B/v1/actions/sample.rollback" -H 'Content-Type: application/json' \
   -d '{"parameters":{"image_tag":"latest; podman rm -f axiom-test-app #"}}'
 
 echo "=== rollback: valid parameter succeeds ==="
-R=$(curl -s $C -X POST "$B/v1/actions/backend.rollback" -H 'Content-Type: application/json' -d '{"parameters":{"image_tag":"alpine"}}')
+R=$(curl -s $C -X POST "$B/v1/actions/sample.rollback" -H 'Content-Type: application/json' -d '{"parameters":{"image_tag":"alpine"}}')
 JOB=$(echo "$R" | job_id)
 wait_terminal "$JOB"
 curl -s $C "$B/v1/jobs/$JOB/logs"; echo
 
 echo
-echo "=== unauthorized identity cannot trigger backend.deploy ==="
+echo "=== unauthorized identity cannot trigger sample.action ==="
 curl -s -o /dev/null -w '%{http_code}\n' --cacert ca.crt --cert unauth-client.crt --key unauth-client.key \
-  -X POST "$B/v1/actions/backend.deploy"
+  -X POST "$B/v1/actions/sample.action"
 
 echo "=== audit trail for this run ==="
 tail -25 /var/log/axiom/audit.log

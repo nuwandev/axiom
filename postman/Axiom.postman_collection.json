@@ -13,13 +13,13 @@
     },
     {
       "key": "action",
-      "value": "backend.deploy",
-      "description": "Name of an action to trigger. 'backend.deploy' is a common example name from this project's docs (see configs/example.yaml) -- it must actually exist in the config.yaml of the Axiom agent you're pointing at, and your client identity must be allowlisted for it, or you'll get 404/403 respectively."
+      "value": "hello.world",
+      "description": "Name of an action to trigger. 'hello.world' is the one action Axiom ships by default (see configs/example.yaml) -- it needs no parameters and has no side effects, so it's a safe default to confirm the whole chain works. Change this to any other action you've configured; it must exist in the config.yaml of the Axiom agent you're pointing at, and your client identity must be allowlisted for it, or you'll get 404/403 respectively."
     },
     {
       "key": "image_tag",
       "value": "uat-20260823-example",
-      "description": "Example value for a declared 'image_tag' action parameter, matching the pattern used in this project's example config (^[a-zA-Z0-9._-]{1,128}$). Only relevant if the action you're triggering actually declares an image_tag parameter -- Axiom rejects any parameter an action hasn't declared."
+      "description": "Generic placeholder value for a string parameter matching the pattern ^[a-zA-Z0-9._-]{1,128}$ -- only relevant once you've configured a real action of your own that declares a parameter by this name. Axiom has no opinion on parameter names; adjust this to whatever your own action actually declares, or ignore it entirely for parameter-less actions like 'hello.world'."
     },
     {
       "key": "job_id",
@@ -101,7 +101,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"parameters\": {\n    \"image_tag\": \"{{image_tag}}\"\n  }\n}",
+              "raw": "{}",
               "options": { "raw": { "language": "json" } }
             },
             "url": {
@@ -109,7 +109,7 @@
               "host": ["{{base_url}}"],
               "path": ["v1", "actions", "{{action}}"]
             },
-            "description": "POST /v1/actions/{action}. Triggers a configured action and returns immediately with a job_id -- the action itself runs in the background.\n\nIMPORTANT: '{{action}}' must already exist as a named action in the target Axiom agent's config.yaml, and your client certificate's identity must be listed under that action in authorization.identities -- Axiom does not accept arbitrary action names or commands. See docs/actions.md in the repository for the action model.\n\nThe request body's 'parameters' object may only contain parameter names the action has actually declared in its config (e.g. 'image_tag') -- an undeclared parameter, or one that fails its configured regex pattern, is rejected with 400 before the action ever runs. If the action takes no parameters, send an empty body or {}.\n\nOn success (202), the test script below saves job_id into the job_id collection variable automatically, ready for the 'Get Job Status' and 'Get Job Logs' requests."
+            "description": "POST /v1/actions/{action}. Triggers a configured action and returns immediately with a job_id -- the action itself runs in the background.\n\nIMPORTANT: '{{action}}' must already exist as a named action in the target Axiom agent's config.yaml, and your client certificate's identity must be listed under that action in authorization.identities -- Axiom does not accept arbitrary action names or commands. See docs/actions.md in the repository for the action model.\n\nThe default body ({}) matches 'hello.world', which takes no parameters. If you point {{action}} at a parameterized action of your own, change the body to `{\"parameters\": {\"some_param\": \"{{image_tag}}\"}}` (or whatever parameter names your action actually declares) -- an undeclared parameter, or one that fails its configured regex pattern, is rejected with 400 before the action ever runs.\n\nOn success (202), the test script below saves job_id into the job_id collection variable automatically, ready for the 'Get Job Status' and 'Get Job Logs' requests."
           },
           "event": [
             {
@@ -326,7 +326,7 @@
               "host": ["{{base_url}}"],
               "path": ["v1", "actions", "{{action}}"]
             },
-            "description": "Expect 400. Sends an empty parameters object against an action that declares at least one required parameter (e.g. 'image_tag: required: true' in the example config) -- adjust {{action}} to point at such an action in your own config if the default doesn't declare one."
+            "description": "Expect 400. Sends an empty parameters object against an action that declares at least one required parameter -- {{action}}'s default, 'hello.world', declares none, so change {{action}} to point at a parameterized action in your own config to see this fail as expected (e.g. a 'some_param: required: true' declaration, following the template in docs/actions.md)."
           },
           "event": [
             {
@@ -359,7 +359,7 @@
               "host": ["{{base_url}}"],
               "path": ["v1", "actions", "{{action}}"]
             },
-            "description": "Expect 400. The example config's image_tag pattern is ^[a-zA-Z0-9._-]{1,128}$ -- spaces aren't allowed, so this value fails validation before the action ever runs. This is a benign example chosen only to violate the pattern; it is not an injection payload and does not need to be (Axiom never passes parameter values through a shell in the first place -- see docs/security.md)."
+            "description": "Expect 400. {{action}}'s default, 'hello.world', declares no parameters at all, so this only demonstrates pattern validation once {{action}} points at a parameterized action of your own whose 'image_tag'-style parameter uses a pattern like ^[a-zA-Z0-9._-]{1,128}$ -- spaces aren't allowed under that pattern, so this value fails validation before the action ever runs. This is a benign example chosen only to violate the pattern; it is not an injection payload and does not need to be (Axiom never passes parameter values through a shell in the first place -- see docs/security.md)."
           },
           "event": [
             {

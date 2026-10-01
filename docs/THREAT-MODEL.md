@@ -8,6 +8,56 @@ already been fixed (see the corresponding commit), not merely documented.
 For each scenario: what an attacker in that position can and cannot do, and
 which specific control is responsible for the boundary.
 
+**Platform note.** The scenarios below are written against the Linux
+deployment. The Windows Server 2022 build preserves every one of these
+boundaries with a Windows-native mechanism (Job Object instead of process
+group + Pdeathsig; NTFS ACLs + a virtual service account instead of POSIX
+ownership + systemd sandbox; SCM instead of systemd) — see
+[`windows-security.md`](windows-security.md) for the property-by-property
+mapping and the Windows-specific accepted residuals. The Windows real-host
+validation pass (the analogue of the RHEL validation below) has been
+performed — see [`WINDOWS-SERVER-2022-VALIDATION.md`](WINDOWS-SERVER-2022-VALIDATION.md).
+
+---
+
+## Verified control matrix (Windows release audit)
+
+Code-level review against four specific attack categories, each claim tied
+to the real file and re-checked against this project's actual source
+rather than summarized from memory. This supplements, not replaces, the
+scenario-by-scenario analysis below — the scenarios cover what an attacker
+in a given position can/cannot do; this table is the cross-cutting code
+properties that back several of them at once.
+
+| Attack vector | Code-level mitigation | Where |
+|---|---|---|
+| Command injection via action parameters | Parameters never reach a command line or shell string; they populate the child process's `[]string` environment slice as `AXIOM_PARAM_<NAME>`, passed through the OS process-creation call as opaque key/value pairs | `internal/jobs/manager.go` (`buildEnv`) |
+| Command injection via the Windows invocation itself | Fixed, compile-time-constant PowerShell argument vector (`-NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script>`); `-Command`/`-EncodedCommand` never appear, enforced by a test that asserts their absence | `internal/executor/launch_windows.go`, `executor_windows_test.go` |
+| Authentication bypass (expired/wrong-CA/wrong-EKU client cert) | Full `x509.Verify` chain check against the configured CA pool, scoped to `ExtKeyUsageClientAuth`, with no override of the verification time | `internal/auth/auth.go` |
+| Authorization bypass (identity not allowlisted for an action) | Default-deny exact-string membership check; a `nil`/absent identity is denied before the map lookup | `internal/config/config.go` (`Identity.IsAllowed`) |
+| Local privilege escalation via the service account | Runs directly as the virtual account `NT SERVICE\axiom` (`SERVICE_SID_TYPE_UNRESTRICTED`), never as SYSTEM/Administrator with privileges dropped afterward | `cmd/axiom/service_windows.go` |
+| DLL/binary hijack of the PowerShell interpreter | Interpreter path resolved only from `%SystemRoot%`, never via `PATH`; its own ACL is integrity-checked at startup | `internal/executor/launch_windows.go` (`powerShellPath`, `CheckPlatformPrerequisites`) |
+| Symlink / reparse-point substitution of a script or config file | Reparse points rejected outright; every ancestor directory up to an inheritance-protected root must be ACL-clean before a path is trusted | `internal/winsec/winsec_windows.go` |
+| Race conditions / deadlocks in job tracking | Two independent, never-nested-in-opposite-order mutexes; exclusive-action locking uses non-blocking `TryLock`, never a blocking `Lock` that could wedge a goroutine | `internal/jobs/manager.go` |
+
+This table reflects a source-code review, re-verified against this specific
+release's code rather than assumed from an earlier pass. It is not a
+substitute for independent third-party review, and does not claim coverage
+of categories outside the four audited here (e.g. this does not evaluate
+TLS library CVEs, supply-chain integrity of dependencies, or the
+operating system's own attack surface).
+
+### Shared responsibility: the script you configure is not Axiom's to defend
+
+Axiom guarantees the four properties above about *itself* — what it will
+never let a request do. It makes no claim about a capability script's own
+internal logic. If an operator writes a script that takes an
+`AXIOM_PARAM_*` value and feeds it into its own unsafe construct (e.g. a
+PowerShell `Invoke-Expression`, a bash `eval`, string-built SQL), that
+vulnerability lives in the script the operator wrote and reviewed, not in
+Axiom. Write capability scripts defensively — see
+[`docs/actions.md`](actions.md).
+
 ---
 
 ## 1. Remote attacker without credentials
@@ -168,7 +218,7 @@ concerns.
 ## 9. Concurrent deployment requests (same action, overlapping in time)
 
 **Can:** two callers (or one caller racing itself) issue
-`POST /v1/actions/backend.deploy` at nearly the same instant.
+`POST /v1/actions/your.deploy` at nearly the same instant.
 **Cannot:** actually run both simultaneously if the action is configured
 `concurrency: exclusive` — the second request gets `409` immediately
 (`jobs.ErrActionBusy`), verified by a test that starts a slow action and
@@ -245,7 +295,7 @@ its own health check before the script exits.
 **Analysis:** this is explicitly the action script's responsibility to
 detect and report, not Axiom's — Axiom only observes the script's exit
 code (and timeout/output). The spec's guidance (see
-[`scripts/examples/backend-deploy.sh.sample`](../scripts/examples/backend-deploy.sh.sample))
+[`scripts/examples/your-deploy.sh.sample`](../scripts/examples/your-deploy.sh.sample))
 is for the script itself to wait for and verify real application health
 before exiting `0`, so "launched but broken" correctly surfaces to the
 caller as a failed job rather than a false success.

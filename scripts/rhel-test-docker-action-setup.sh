@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs INSIDE a systemd-enabled RHEL-family test container as root. Installs
-# a realistic backend.deploy / backend.rollback action pair that mirrors the
+# a realistic sample.action / sample.rollback action pair that mirrors the
 # real deployment model (pull -> up -d -> real health check, explicit
 # image_tag parameter for rollback) against a harmless, disposable stand-in
 # app -- never a real deployment. Requires rhel-test-setup.sh to have been
@@ -87,13 +87,13 @@ chmod 0750 /opt/axiom-test-app/run.sh /opt/axiom-test-app/run-unhealthy.sh /opt/
 # covered by the ancestor-directory security walk; see
 # internal/config/script_security_unix.go's rejectSymlink). Install the
 # scripts directly at their configured path instead of symlinking them in.
-install -o root -g axiom -m 0750 /opt/axiom-test-app/run.sh /opt/axiom/actions/backend.deploy.sh
-install -o root -g axiom -m 0750 /opt/axiom-test-app/run-unhealthy.sh /opt/axiom/actions/backend.deploy-unhealthy.sh
-install -o root -g axiom -m 0750 /opt/axiom-test-app/rollback.sh /opt/axiom/actions/backend.rollback.sh
+install -o root -g axiom -m 0750 /opt/axiom-test-app/run.sh /opt/axiom/actions/sample.action.sh
+install -o root -g axiom -m 0750 /opt/axiom-test-app/run-unhealthy.sh /opt/axiom/actions/sample.action-unhealthy.sh
+install -o root -g axiom -m 0750 /opt/axiom-test-app/rollback.sh /opt/axiom/actions/sample.rollback.sh
 
 cat > /tmp/new-actions.yaml <<'EOF'
-  backend.deploy:
-    command: /opt/axiom/actions/backend.deploy.sh
+  sample.action:
+    command: /opt/axiom/actions/sample.action.sh
     timeout: 20s
     concurrency: exclusive
     parameters:
@@ -101,13 +101,13 @@ cat > /tmp/new-actions.yaml <<'EOF'
         type: string
         pattern: '^[a-zA-Z0-9._-]{1,128}$'
 
-  backend.deploy-unhealthy:
-    command: /opt/axiom/actions/backend.deploy-unhealthy.sh
+  sample.action-unhealthy:
+    command: /opt/axiom/actions/sample.action-unhealthy.sh
     timeout: 10s
     concurrency: exclusive
 
-  backend.rollback:
-    command: /opt/axiom/actions/backend.rollback.sh
+  sample.rollback:
+    command: /opt/axiom/actions/sample.rollback.sh
     timeout: 20s
     concurrency: exclusive
     parameters:
@@ -130,10 +130,10 @@ chown root:axiom /etc/axiom/config.yaml
 chmod 0640 /etc/axiom/config.yaml
 
 # Append to this identity's allowlist.
-sed -i '/- test.param/a\        - backend.deploy\n        - backend.deploy-unhealthy\n        - backend.rollback' /etc/axiom/config.yaml
+sed -i '/- test.param/a\        - sample.action\n        - sample.action-unhealthy\n        - sample.rollback' /etc/axiom/config.yaml
 
 echo "=== config around the new actions ==="
-grep -A3 'backend\.' /etc/axiom/config.yaml
+grep -A3 'sample\.' /etc/axiom/config.yaml
 
 echo "=== script ownership/permissions ==="
-ls -la /opt/axiom/actions/backend.*.sh
+ls -la /opt/axiom/actions/sample.*.sh

@@ -161,14 +161,15 @@ func validateParameters(action *config.Action, requested map[string]string) erro
 	return nil
 }
 
-// buildEnv constructs the child process environment from only the
-// declared, validated parameters — never from arbitrary request data.
+// buildEnv constructs the child process environment: a fixed,
+// platform-specific base (see baseEnv) plus the job/action identifiers and
+// the declared, validated parameters — never arbitrary request data, and
+// never the Axiom process's own inherited environment.
 func buildEnv(jobID, actionName string, params map[string]string) []string {
-	env := []string{
-		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"AXIOM_JOB_ID=" + jobID,
-		"AXIOM_ACTION=" + actionName,
-	}
+	env := append(baseEnv(),
+		"AXIOM_JOB_ID="+jobID,
+		"AXIOM_ACTION="+actionName,
+	)
 	for name, value := range params {
 		envName := "AXIOM_PARAM_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
 		env = append(env, envName+"="+value)
