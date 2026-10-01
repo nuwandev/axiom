@@ -59,7 +59,7 @@ pipeline {
     }
 
     stages {
-        stage('Deploy backend') {
+        stage('Trigger action') {
             steps {
                 script {
                     def triggerBody = '{"parameters":{"image_tag":"' + env.BUILD_TAG + '"}}'
@@ -67,7 +67,7 @@ pipeline {
                         script: """
                             curl -sS --fail \
                               --cacert "$AXIOM_CA" --cert "$AXIOM_CERT" --key "$AXIOM_KEY" \
-                              -X POST "${AXIOM_URL}/v1/actions/backend.deploy" \
+                              -X POST "${AXIOM_URL}/v1/actions/your.deploy" \
                               -H 'Content-Type: application/json' \
                               -d '${triggerBody}'
                         """,
@@ -153,7 +153,7 @@ curl -sS --fail --cacert "$AXIOM_CA" --cert "$AXIOM_CERT" --key "$AXIOM_KEY" \
 below for why this must be explicit, not "roll back to previous"):
 ```bash
 curl -sS --fail --cacert "$AXIOM_CA" --cert "$AXIOM_CERT" --key "$AXIOM_KEY" \
-  -X POST "${AXIOM_URL}/v1/actions/backend.rollback" \
+  -X POST "${AXIOM_URL}/v1/actions/your.rollback" \
   -H 'Content-Type: application/json' \
   -d '{"parameters":{"image_tag":"'"${PREVIOUS_GOOD_TAG}"'"}}'
 ```

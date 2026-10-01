@@ -2,12 +2,14 @@
 
 ## Requirements
 
-Go 1.23+, and a Linux (or other unix) host. The executor
-(`internal/executor`) and the config security checks
-(`internal/config/script_security_unix.go`) use unix-specific process and
-file APIs (`syscall.SysProcAttr`, `Pdeathsig`, ownership/permission
-syscalls) and do not build on Windows — this is a Linux-targeted product,
-not a portability gap to be worked around.
+Go 1.23+. Linux (or other unix) is the primary development host. The whole
+tree also builds for `GOOS=windows` — the Windows-specific process
+execution, Job Object containment, NTFS ACL checks and Service Control
+Manager adapter live behind `//go:build windows` files
+(`internal/executor/*_windows.go`, `internal/config/script_security_windows.go`,
+`internal/winsec/`, `internal/jobs/env_windows.go`,
+`cmd/axiom/*_windows.go`). The shared packages carry no build tag and
+compile for every OS.
 
 ## Standard checks
 
@@ -55,12 +57,51 @@ SELinux *enforcing*-mode behavior beyond a static policy-database review
 enforcing host — check the current `THREAT-MODEL.md` for what's actually
 been confirmed before asserting otherwise in an issue or PR.
 
+## Windows
+
+The Windows platform code has three test tiers of its own:
+
+- **`GOOS=windows` cross-compile + vet** — runs on the Linux CI job. Keeps
+  the platform seam honest; proves nothing about behaviour.
+- **Windows CI unit / non-elevated integration** (`*_windows_test.go`) — runs
+  on a `windows-latest` CI runner. Covers: the PowerShell executor
+  (exit codes, stdout/stderr, output truncation, timeout, cancellation,
+  constructed-not-inherited environment, parameter values as inert data),
+  the fixed `buildCommand` argument vector (no `-Command`, no
+  `-EncodedCommand`, no arbitrary argv — `-ExecutionPolicy Bypass` *is*
+  present deliberately, scoped to this one fixed invocation only; see
+  `docs/windows-security.md`), Job Object process-tree
+  termination, `internal/winsec` pure ACL decision logic plus its Win32
+  read path against real temp files (extension + ownership rejection,
+  reparse-point / junction rejection), the job manager end-to-end through
+  PowerShell, and the `serve(ctx)` lifecycle. It does **not** cover the full
+  `config.Load` path or mTLS API integration, because those need an
+  NTFS-ACL-configured fixture tree (an ordinary `t.TempDir()` is
+  user-writable and correctly fails the security checks).
+- **Windows Server 2022 / Windows 11 Pro validation** — a manual pass on
+  real hosts, the analogue of the RHEL tier, **completed**:
+  `Install-Axiom.ps1` → protected ACLs verified → `config.Load` accepting
+  a correctly-secured layout and rejecting a tampered one → service
+  start/stop/recovery → mTLS end-to-end with a Windows client cert →
+  capability execution (including the Docker-backed sample's fail-closed
+  path on a host with no Docker daemon) → Job Object teardown on service
+  stop and on a forced kill → least-privilege confirmation (`whoami`,
+  token privileges, from inside a real triggered capability). Findings are
+  recorded in [`WINDOWS-SERVER-2022-VALIDATION.md`](WINDOWS-SERVER-2022-VALIDATION.md),
+  the Windows analogue of the RHEL findings below. Re-run this pass against
+  any future change to `internal/winsec`, `internal/executor`'s Windows
+  files, or `packaging/windows/`.
+
 ## CI
 
-GitHub Actions runs `gofmt -l .`, `go build ./...`, `go vet ./...`,
-`go test ./...`, and `go test ./... -race` on every push/PR
-(`.github/workflows/ci.yml`). CI does not run the RHEL validation tier —
-that stays a deliberate, manual, pre-release step.
+GitHub Actions (`.github/workflows/ci.yml`) runs, on every push/PR:
+
+- a Linux job: `gofmt -l .`, `go build ./...`, `go vet ./...`,
+  `go test ./...`, `go test ./... -race`, then `GOOS=windows` build + vet;
+- a Windows job: `go build`, `go vet`, `go test ./...`.
+
+CI does not run the RHEL or Windows Server 2022 host-validation tiers —
+those stay deliberate, manual, pre-release steps.
 
 CodeQL static analysis (`.github/workflows/codeql.yml.disabled`) is
 prepared but currently disabled: code scanning on a private repository

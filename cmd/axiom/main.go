@@ -6,19 +6,17 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/nuwandev/axiom/internal/api"
 	"github.com/nuwandev/axiom/internal/audit"
 	"github.com/nuwandev/axiom/internal/config"
+	"github.com/nuwandev/axiom/internal/executor"
 	"github.com/nuwandev/axiom/internal/jobs"
 )
 
@@ -32,21 +30,15 @@ func main() {
 	}
 }
 
-func run() error {
-	configPath := flag.String("config", "/etc/axiom/config.yaml", "path to agent configuration file")
-	showVersion := flag.Bool("version", false, "print version and exit")
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Printf("axiom %s (%s)\n", api.Version, commit)
-		return nil
-	}
-
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
-	cfg, err := config.Load(*configPath)
-	if err != nil {
-		return fmt.Errorf("loading config: %w", err)
+// serve builds the agent and runs it until ctx is cancelled, then shuts the
+// HTTP listener down gracefully. It is the single application lifecycle
+// shared by every entrypoint: the unix binary drives ctx from POSIX
+// signals, and the Windows service adapter drives it from the Service
+// Control Manager. Neither duplicates any of the startup or shutdown logic
+// below.
+func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+	if err := executor.CheckPlatformPrerequisites(); err != nil {
+		return fmt.Errorf("platform prerequisites: %w", err)
 	}
 
 	auditLogger, err := audit.Open(cfg.AuditLogPath, cfg.AgentID)
@@ -90,9 +82,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", addr, err)
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	serveErr := make(chan error, 1)
 	go func() {

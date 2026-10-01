@@ -26,6 +26,17 @@ install -d -o root -g "$AXIOM_GROUP" -m 0750 "$ACTIONS_DIR"
 install -d -o "$AXIOM_USER" -g "$AXIOM_GROUP" -m 0750 "$LOG_DIR"
 install -d -o "$AXIOM_USER" -g "$AXIOM_GROUP" -m 0750 "$STATE_DIR"
 
+# hello-world is auto-placed (unlike a real action you add) for the same
+# reason scripts/install.sh does it -- it's authored and reviewed as part
+# of Axiom itself, is the same fixed, side-effect-free content on every
+# install, and exists purely so a fresh install has one safe,
+# zero-dependency action to trigger immediately. See docs/getting-started.md.
+HELLO_WORLD_SRC="/usr/share/doc/axiom/hello-world.sh.sample"
+HELLO_WORLD_DEST="$ACTIONS_DIR/hello-world.sh"
+if [ ! -f "$HELLO_WORLD_DEST" ] && [ -f "$HELLO_WORLD_SRC" ]; then
+	install -o root -g "$AXIOM_GROUP" -m 0750 "$HELLO_WORLD_SRC" "$HELLO_WORLD_DEST"
+fi
+
 systemctl daemon-reload >/dev/null 2>&1 || true
 
 # Only on a genuinely fresh install ($1 == 1) — an upgrade shouldn't repeat
@@ -35,7 +46,7 @@ if [ "$1" = "1" ]; then
 	echo "axiom installed. Filesystem layout ready:"
 	echo "  $ETC_DIR        (root:$AXIOM_GROUP, 0750) - config"
 	echo "  $CERTS_DIR  (root:$AXIOM_GROUP, 0750) - mTLS material (place manually)"
-	echo "  $ACTIONS_DIR       (root:$AXIOM_GROUP, 0750) - action scripts (place manually)"
+	echo "  $ACTIONS_DIR       (root:$AXIOM_GROUP, 0750) - action scripts (hello-world.sh auto-placed; your own go here manually)"
 	echo "  $LOG_DIR        ($AXIOM_USER:$AXIOM_GROUP, 0750) - audit log"
 	echo "  $STATE_DIR        ($AXIOM_USER:$AXIOM_GROUP, 0750) - \$HOME for the axiom account"
 	echo

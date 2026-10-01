@@ -1,0 +1,25 @@
+# Example Axiom capability script for an action configured as:
+#
+#   hello.world:
+#     command: C:\ProgramData\Axiom\capabilities\hello-world.ps1
+#     timeout: 30s
+#     concurrency: shared
+#
+# Deliberately does nothing but confirm the whole chain actually works --
+# mTLS authentication, authorization, the fixed PowerShell invocation, and
+# the audit trail -- with no external dependency (no Docker, no real
+# backend) and no side effect on the host beyond its own stdout. Trigger
+# this first after a fresh install to confirm everything is wired up
+# correctly before configuring a real action; see docs/getting-started.md.
+#
+# Install owned by BUILTIN\Administrators with no non-admin write access,
+# exactly like every other capability script -- this one is harmless, but
+# Axiom does not and should not treat it as a special case.
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+
+Write-Output "Hello from Axiom!"
+Write-Output "Ran on $env:COMPUTERNAME at $(Get-Date -Format o)"
+exit 0

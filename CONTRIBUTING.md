@@ -19,9 +19,10 @@ be declined.
 
 ## Development
 
-Requires Go 1.23+ and a Linux (or other unix) host — the executor and
-config-security checks use unix process/file APIs and don't build on
-Windows.
+Requires Go 1.23+. Linux (or other unix) is the primary development host;
+the tree also builds and tests for `GOOS=windows`. Platform-specific code
+lives behind `//go:build unix` / `//go:build windows` files — keep shared
+logic out of them. See [`docs/development.md`](docs/development.md).
 
 ```bash
 go build ./...
@@ -47,13 +48,24 @@ means for this project.
 ## Cutting a release
 
 1. Update [`CHANGELOG.md`](CHANGELOG.md) — move the pending notes under a new
-   `## [X.Y.Z] — <date>` heading.
+   `## [X.Y.Z] — <date>` heading. `.github/workflows/release.yml` uses this
+   section verbatim as the GitHub Release notes, so write it for that
+   audience.
 2. Run `scripts/sync-doc-versions.sh vX.Y.Z` to repoint the copy-and-run
    install commands in `docs/INSTALL.md` at the new tag.
-3. Commit both as `Release vX.Y.Z`, then tag: `git tag vX.Y.Z`.
-4. Build artifacts: `VERSION=vX.Y.Z ./scripts/build-release.sh` — it refuses
-   to run if step 2 was skipped — and attach `dist/vX.Y.Z/*` to the GitHub
-   release.
+3. Commit both as `Release vX.Y.Z`, then tag and push the tag:
+   `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. That alone publishes the release: `.github/workflows/release.yml` builds
+   every artifact with `scripts/build-release.sh` (linux/amd64, linux/arm64
+   + RPMs, windows/amd64 + the offline install bundle) — refusing to run if
+   step 2 was skipped, same as a local build — and uploads them to a new
+   GitHub Release named after the tag. Watch the Actions run; nothing needs
+   attaching by hand.
+   - To exercise the pipeline without publishing (e.g. after changing
+     `scripts/build-release.sh` or the workflow itself), run it manually from
+     the Actions tab ("Run workflow") with a throwaway version like
+     `v0.0.0-dryrun` — this builds everything and uploads it as a workflow
+     run artifact instead of a GitHub Release.
 
 ## Reporting bugs
 
