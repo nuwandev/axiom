@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Example action script for an action configured as:
+#
+#   hello.world:
+#     command: /opt/axiom/actions/hello-world.sh
+#     timeout: 30s
+#     concurrency: shared
+#
+# Deliberately does nothing but confirm the whole chain actually works --
+# mTLS authentication, authorization, the fixed invocation, and the audit
+# trail -- with no external dependency and no side effect on the host
+# beyond its own stdout. Run this first after a fresh install to confirm
+# everything is wired up correctly before configuring a real action; see
+# docs/getting-started.md.
+#
+# Install this at the exact path referenced by `command:`, owned by root
+# (or the account Axiom runs as) with mode 0750 (no group/world write) --
+# Axiom refuses to start if that isn't true. This one is harmless, but
+# Axiom does not and should not treat it as a special case.
+set -euo pipefail
+
+echo "Hello from Axiom!"
+echo "Ran on $(hostname) at $(date -Is)"
+exit 0

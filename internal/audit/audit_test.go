@@ -19,7 +19,7 @@ func TestLogger_WriteAndRedact(t *testing.T) {
 	err = l.Write(Record{
 		Event:  EventFinished,
 		JobID:  "01J000000000000000000000",
-		Action: "backend.deploy",
+		Action: "sample.action",
 		Parameters: map[string]string{
 			"image_tag": "uat-123",
 			"api_token": "super-secret-value",

@@ -73,7 +73,7 @@ that off does not affect Axiom's own TLS enforcement, only whether
 
 Open **Actions → Trigger Action**. Before sending:
 - Set the `action` collection variable to a name that actually exists in
-  your target agent's `config.yaml` (`backend.deploy` is only an example
+  your target agent's `config.yaml` (`your.deploy` is only an example
   from this project's docs — see [`actions.md`](actions.md)).
 - Set `image_tag` (or edit the request body) to match whatever parameters
   that specific action actually declares — Axiom rejects any parameter an

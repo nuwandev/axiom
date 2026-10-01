@@ -14,12 +14,22 @@ to run, only *which already-configured thing* to run.
 ## Commands are local scripts, not inline logic
 
 `command:` is always a path to a script file on the server, never inline
-shell text in the YAML. Axiom invokes that script directly — never through
-`/bin/sh -c` or any shell — so shell metacharacters in arguments or
-parameter values have no special meaning to Axiom itself. The script
-contains whatever operational logic your deployment actually needs; Axiom
-has zero knowledge of Docker, Kubernetes, systemd, or anything else that
-might be inside it.
+shell text in the YAML. On unix Axiom invokes that script directly — never
+through `/bin/sh -c` or any shell. On Windows Server it invokes the script
+through a single fixed, non-configurable command:
+
+```
+powershell.exe -NoProfile -NonInteractive -File <command>
+```
+
+with `command` (an approved `.ps1`) as the only variable element and no
+request data anywhere on the line — `-Command` is never used. Either way,
+shell/PowerShell metacharacters in parameter values have no special meaning
+to Axiom itself. The script contains whatever operational logic your
+deployment actually needs; Axiom has zero knowledge of Docker, Kubernetes,
+systemd, Windows services, or anything else that might be inside it. See
+[`windows-security.md`](windows-security.md) for the Windows execution and
+integrity model.
 
 ## There is no arbitrary-command endpoint
 
@@ -36,8 +46,8 @@ match:
 
 ```yaml
 actions:
-  backend.rollback:
-    command: /opt/axiom/actions/backend-rollback.sh
+  your.action.name:
+    command: /opt/axiom/actions/your-script.sh
     timeout: 10m
     parameters:
       image_tag:

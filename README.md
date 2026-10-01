@@ -1,11 +1,11 @@
 # Axiom
 
-A secure server-side automation/action agent for Linux servers. Axiom
-exposes a small authenticated HTTPS API that lets a trusted system (a CI/CD
-controller, an internal automation tool) trigger predefined, server-local
-actions — deploy, rollback, restart, and whatever else you configure —
-without SSH access, and without Axiom itself knowing anything about what
-those actions actually do.
+A secure server-side automation/action agent for Linux and Windows Server.
+Axiom exposes a small authenticated HTTPS API that lets a trusted system (a
+CI/CD controller, an internal automation tool) trigger predefined,
+server-local actions — deploy, rollback, restart, and whatever else you
+configure — without SSH access, and without Axiom itself knowing anything
+about what those actions actually do.
 
 [![CI](https://github.com/nuwandev/axiom/actions/workflows/ci.yml/badge.svg)](https://github.com/nuwandev/axiom/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -87,7 +87,7 @@ background. Poll for status and fetch captured (size-bounded) stdout/stderr
 separately:
 
 ```http
-POST /v1/actions/backend.deploy
+POST /v1/actions/{action}
 GET  /v1/jobs/{job_id}
 GET  /v1/jobs/{job_id}/logs
 GET  /health
@@ -125,6 +125,8 @@ any development tooling installed.** See
 
 ## Installation overview
 
+### Linux (RHEL-family)
+
 ```bash
 # 1. build or download a release binary (see Releases)
 go build -o axiom ./cmd/axiom
@@ -149,6 +151,29 @@ Full walkthrough: [`docs/getting-started.md`](docs/getting-started.md).
 Complete reference (permissions, systemd hardening, SELinux, upgrade,
 rollback, uninstall, troubleshooting): [`docs/INSTALL.md`](docs/INSTALL.md).
 
+### Windows Server 2022 / Windows 10+ Pro
+
+```powershell
+# 1. download the release MSI or zip bundle (see Releases), then from an
+#    elevated PowerShell in the unpacked bundle directory:
+
+# recommended: double-click the MSI, or silently --
+msiexec /i axiom-<version>-windows-amd64.msi /qn
+# -- registers the service, applies ACLs, and auto-places the hello.world
+# example action, all in one step. Or, from the zip bundle:
+.\Install-Axiom.ps1
+
+# 2. provide your own certificates (Axiom never generates these)
+Copy-Item ca.crt, server.crt, server.key "$env:ProgramData\Axiom\certs\"
+
+# 3. edit C:\ProgramData\Axiom\config.yaml (the starter one is already there)
+
+# 4. start it
+Set-Service -Name axiom -StartupType Automatic; Start-Service -Name axiom
+```
+
+Full walkthrough: [`docs/INSTALL-WINDOWS.md`](docs/INSTALL-WINDOWS.md).
+
 ## Configuration overview
 
 One YAML file declares the agent's identity, its mTLS material, its named
@@ -167,20 +192,25 @@ security:
     key_file: /etc/axiom/certs/server.key
 
 actions:
-  backend.deploy:
-    command: /opt/axiom/actions/backend-deploy.sh
-    timeout: 10m
-    concurrency: exclusive
-    parameters:
-      image_tag:
-        type: string
-        pattern: '^[a-zA-Z0-9._-]{1,128}$'
-        required: true
+  hello.world:
+    command: /opt/axiom/actions/hello-world.sh
+    timeout: 30s
+    concurrency: shared
+
+  # Add your own actions below -- Axiom has no opinion on what they do.
+  # your.action.name:
+  #   command: /opt/axiom/actions/your-script.sh
+  #   timeout: 10m
+  #   parameters:
+  #     some_param:
+  #       type: string
+  #       pattern: '^[a-zA-Z0-9._-]{1,128}$'
+  #       required: true
 
 authorization:
   identities:
     example-ci:
-      actions: [backend.deploy]
+      actions: [hello.world]
 ```
 
 Full reference: [`docs/configuration.md`](docs/configuration.md). Complete
@@ -190,42 +220,38 @@ annotated example: [`configs/example.yaml`](configs/example.yaml).
 
 An action is just a name pointing at a script Axiom runs directly (never
 through a shell). Declared parameters arrive as `AXIOM_PARAM_<NAME>`
-environment variables — never interpolated into a command line:
+environment variables — never interpolated into a command line. Axiom
+ships exactly one example, `hello-world` — a zero-dependency, side-effect-
+free script that just confirms the whole chain works; Axiom has no opinion
+on what a *real* action should do, so it ships no example of one:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-: "${AXIOM_PARAM_IMAGE_TAG:?required}"
 
-docker compose -f /opt/example-app/docker-compose.yml pull
-IMAGE_TAG="$AXIOM_PARAM_IMAGE_TAG" \
-  docker compose -f /opt/example-app/docker-compose.yml up -d
-
-# Real health check, not just "the launch command exited 0":
-for i in $(seq 1 30); do
-  curl -sf http://127.0.0.1:8080/healthz && exit 0
-  sleep 2
-done
-exit 1
+echo "Hello from Axiom!"
+echo "Ran on $(hostname) at $(date -Is)"
+exit 0
 ```
 
-Full example with rollback: [`scripts/examples/`](scripts/examples/). Full
-model: [`docs/actions.md`](docs/actions.md).
+See [`scripts/examples/`](scripts/examples/) for the shipped `hello-world`
+script (both PowerShell and bash), and [`docs/actions.md`](docs/actions.md)
+for the full model — including declared parameters and a template for
+writing your own.
 
 ## Example API request and job flow
 
 ```bash
 # Trigger — returns immediately
 curl --cacert ca.crt --cert client.crt --key client.key \
-  -X POST https://agent:8443/v1/actions/backend.deploy \
-  -H 'Content-Type: application/json' \
-  -d '{"parameters":{"image_tag":"uat-20260823-abc123"}}'
+  -X POST https://agent:8443/v1/actions/hello.world \
+  -H 'Content-Type: application/json' -d '{}'
 # {"job_id":"01J...","status":"queued"}
 
 # Poll
 curl --cacert ca.crt --cert client.crt --key client.key \
   https://agent:8443/v1/jobs/01J...
-# {"job_id":"01J...","action":"backend.deploy","status":"succeeded",
+# {"job_id":"01J...","action":"hello.world","status":"succeeded",
 #  "exit_code":0,"started_at":"...","finished_at":"...","duration_ms":48123}
 
 # Logs
@@ -267,9 +293,9 @@ command, by design.
 
 ## Development / testing
 
-Requires Go 1.23+ and a Linux (or other unix) host — the executor and
-config-security checks use unix process/file APIs and don't build on
-Windows.
+Requires Go 1.23+. Linux (or other unix) is the primary development host;
+the tree also builds and tests for `GOOS=windows` (see
+[`docs/development.md`](docs/development.md#windows)).
 
 ```bash
 gofmt -l .
@@ -285,17 +311,36 @@ this project also goes through before a release.
 
 ## Supported platforms
 
-Linux, RHEL-family, systemd-managed, is the current and only implemented
-target — validated on Rocky Linux 9 (see `docs/THREAT-MODEL.md`). Other
-systemd-based distributions (Ubuntu, Debian) are expected to work given the
-same layout but are not part of the current validated matrix.
+The release binary is static (`CGO_ENABLED=0`) with no libc dependency on
+Linux and no runtime dependency beyond what each OS ships by default, so the
+practical compatibility is wider than the validated matrix below — the
+table separates **what this implementation supports architecturally** from
+**what has actually been run end-to-end on a real host**.
+
+| OS | Implementation support | Validated |
+|---|---|---|
+| RHEL-family Linux (RHEL, Rocky, Alma, CentOS Stream), systemd-managed | Yes — static binary, no distro-specific dependency beyond `systemd` | **Rocky Linux 9**, full end-to-end (install → mTLS → job execution → concurrency → crash/restart → upgrade/rollback → uninstall; see `docs/THREAT-MODEL.md`) |
+| Other systemd-based Linux (Ubuntu, Debian and derivatives) | Yes — same static binary and unit file layout; no RHEL-specific code path exists | Not yet run; expected to work, not validated |
+| Windows Server 2016 / 2019 / 2022 / 2025 | Yes — service account model (`NT SERVICE\*` virtual accounts), Job Objects, and `icacls`/`takeown.exe` are all available since Windows Server 2008 R2, well below this project's Go-toolchain floor of Windows Server 2016/Windows 10 (Go 1.21+ does not run on anything older); capability scripts always run under the Windows PowerShell 5.1 that ships by default on every supported release, independent of whether PowerShell 7 is also installed | **Windows Server 2022**, full end-to-end real-host pass (install → ACLs → service start → mTLS → SCM recovery → bad-config diagnostics → least-privilege → uninstall; see [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md)) |
+| Windows 10 / 11 Pro (or any edition with Services + PowerShell, i.e. all of them) | Yes — nothing in the code checks for or depends on "Server" edition specifically; the service, ACL, and PowerShell-invocation logic is edition-agnostic | **Windows 11 Pro**, full end-to-end real-host pass identical in scope to the Windows Server run above. Found and fixed the one real Server-vs-Pro difference in the process: Windows 10/11 Pro's out-of-box PowerShell execution policy (`Restricted`) blocked every capability script until `internal/executor/launch_windows.go` was updated to invoke scripts with `-ExecutionPolicy Bypass` (scoped to that one fixed, ACL-protected invocation only — see `docs/windows-security.md`); re-validated clean afterward with the host's policy never touched. |
+| Windows 7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 | **No** — the Go 1.23 toolchain this project builds with does not support running on these at all (Go dropped them in 1.21), independent of anything Axiom-specific | N/A |
+
+See [`docs/INSTALL-WINDOWS.md`](docs/INSTALL-WINDOWS.md) and
+[`docs/windows-security.md`](docs/windows-security.md) for the Windows
+install/security detail. Not WSL, not a container on either platform —
+a native service on the host OS.
 
 ## Current status
 
 1.0 — the API surface, config schema, and security model are stable.
 Validated end-to-end on a real RHEL-family host (install → mTLS → job
 execution → concurrency → crash/restart → upgrade/rollback → uninstall;
-see [`THREAT-MODEL.md`](docs/THREAT-MODEL.md)) before this release. See
+see [`THREAT-MODEL.md`](docs/THREAT-MODEL.md)) before the initial release.
+Windows Server 2022 support is implemented behind the same contract, tested
+in CI (Linux cross-compile + a Windows runner), and has passed real-host
+validation — see
+[`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md).
+See
 [Releases](https://github.com/nuwandev/axiom/releases) for what's shipped
 and [CHANGELOG](CHANGELOG.md) for what changed.
 
@@ -303,10 +348,11 @@ and [CHANGELOG](CHANGELOG.md) for what changed.
 
 - Broader Linux distribution validation (Ubuntu/Debian) alongside the
   current RHEL-family matrix.
-- **Windows Server** as a future, separate platform implementation (Windows
-  service semantics, process lifecycle, PowerShell-based actions) behind
-  the same API/config contract — not on the current Linux code path, and
-  not started yet.
+- Windows Server 2022 support has landed (native service, PowerShell
+  capability execution, Job Object containment, NTFS ACL integrity checks —
+  see [`docs/INSTALL-WINDOWS.md`](docs/INSTALL-WINDOWS.md)) and has passed
+  full real-host validation — see
+  [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md).
 - A thin CI system integration (e.g. a Jenkins shared library) that wraps
   the raw HTTP flow documented in
   [`docs/jenkins-integration.md`](docs/jenkins-integration.md) — that
@@ -315,6 +361,11 @@ and [CHANGELOG](CHANGELOG.md) for what changed.
 None of these are commitments to add architecture the current design
 deliberately excludes — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for what's
 out of scope.
+
+## Author
+
+Created and maintained by [Theekshana Nuwan](https://github.com/nuwandev)
+([@nuwandev](https://github.com/nuwandev)).
 
 ## License
 

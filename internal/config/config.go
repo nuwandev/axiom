@@ -191,7 +191,9 @@ type rawConfig struct {
 	Jobs          jobsConfig          `yaml:"jobs"`
 }
 
-// DefaultAuditLogPath is used when audit.path is not set in config.
+// DefaultAuditLogPath is the unix default used when audit.path is not set in
+// config. The Windows default is defined in defaults_windows.go; both are
+// returned by defaultAuditLogPath().
 const DefaultAuditLogPath = "/var/log/axiom/audit.log"
 
 // Config is the fully validated, ready-to-use agent configuration.
@@ -249,7 +251,7 @@ func Load(path string) (*Config, error) {
 		MaxJobHistory:        raw.Jobs.MaxHistory,
 	}
 	if cfg.AuditLogPath == "" {
-		cfg.AuditLogPath = DefaultAuditLogPath
+		cfg.AuditLogPath = defaultAuditLogPath()
 	}
 	if cfg.MaxOutputBytes == 0 {
 		cfg.MaxOutputBytes = DefaultOutputBytes
