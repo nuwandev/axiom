@@ -1,11 +1,20 @@
 # Configuration Reference
 
-Axiom reads one YAML file (`-config`, default `/etc/axiom/config.yaml`),
-validated in full at startup — any structural problem, missing/insecure
-file, invalid reference, or out-of-range value aborts startup rather than
-running with a partially valid configuration. See
-[`configs/example.yaml`](../configs/example.yaml) for a complete annotated
-example.
+Axiom reads one YAML file (`-config`, default `/etc/axiom/config.yaml` on
+unix, `C:\ProgramData\Axiom\config.yaml` on Windows), validated in full at
+startup — any structural problem, missing/insecure file, invalid reference,
+or out-of-range value aborts startup rather than running with a partially
+valid configuration. See [`configs/example.yaml`](../configs/example.yaml)
+(and [`configs/example-windows.yaml`](../configs/example-windows.yaml)) for
+complete annotated examples.
+
+**The schema is identical on Linux and Windows.** The only Windows
+differences are that paths are Windows paths (plain unquoted scalars with
+backslashes, already in clean form) and each `actions.<name>.command` must
+be an absolute path ending `.ps1`; the file-security requirements below are
+enforced with NTFS ACLs instead of POSIX ownership/mode. There is no
+Windows-specific configuration block. See
+[`INSTALL-WINDOWS.md`](INSTALL-WINDOWS.md).
 
 ## Agent identity
 
@@ -41,8 +50,8 @@ strong suite set).
 
 ```yaml
 actions:
-  backend.deploy:
-    command: /opt/axiom/actions/backend-deploy.sh  # absolute path, no ./.. segments
+  your.action.name:
+    command: /opt/axiom/actions/your-script.sh  # absolute path, no ./.. segments
     timeout: 10m           # 1s–24h; the full process tree is killed on expiry
     concurrency: exclusive # "shared" (default) or "exclusive"
     parameters:
@@ -73,8 +82,7 @@ authorization:
   identities:
     example-ci:              # must match a client cert's Common Name exactly
       actions:
-        - backend.deploy
-        - backend.rollback
+        - your.action.name
 ```
 
 Default-deny: an identity with no entry, or an action not on its list, is

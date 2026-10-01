@@ -1,3 +1,9 @@
+//go:build unix
+
+// These tests exercise config.Load against fixtures whose security is
+// expressed with POSIX ownership and mode bits. The Windows security model
+// (NTFS ACLs, see internal/winsec) is covered by that package's unit tests
+// and by config_windows_test.go.
 package config
 
 import (
@@ -77,7 +83,7 @@ security:
     key_file: ` + keyFile + `
 
 actions:
-  backend.deploy:
+  sample.action:
     command: ` + scriptPath + `
     timeout: 5m
     concurrency: exclusive
@@ -91,7 +97,7 @@ authorization:
   identities:
     ci-jenkins:
       actions:
-        - backend.deploy
+        - sample.action
 `
 }
 
@@ -111,16 +117,16 @@ func TestLoad_Valid(t *testing.T) {
 	if cfg.AgentID != "test-agent" {
 		t.Errorf("AgentID = %q", cfg.AgentID)
 	}
-	action, ok := cfg.Actions["backend.deploy"]
+	action, ok := cfg.Actions["sample.action"]
 	if !ok {
-		t.Fatalf("expected backend.deploy action")
+		t.Fatalf("expected sample.action action")
 	}
 	if action.Concurrency != ConcurrencyExclusive {
 		t.Errorf("Concurrency = %q", action.Concurrency)
 	}
 	id, ok := cfg.Identities["ci-jenkins"]
-	if !ok || !id.IsAllowed("backend.deploy") {
-		t.Errorf("expected ci-jenkins allowed for backend.deploy")
+	if !ok || !id.IsAllowed("sample.action") {
+		t.Errorf("expected ci-jenkins allowed for sample.action")
 	}
 	if id.IsAllowed("frontend.deploy") {
 		t.Errorf("expected ci-jenkins NOT allowed for frontend.deploy (default-deny)")
@@ -190,7 +196,7 @@ security:
     cert_file: ` + cert + `
     key_file: ` + key + `
 actions:
-  backend.deploy:
+  sample.action:
     command: ` + script + `
     timeout: 5m
 authorization:
@@ -225,7 +231,7 @@ security:
     cert_file: ` + cert + `
     key_file: ` + key + `
 actions:
-  backend.deploy:
+  sample.action:
     command: ` + script + `
 authorization:
   identities: {}
@@ -288,7 +294,7 @@ security:
     cert_file: ` + cert + `
     key_file: ` + key + `
 actions:
-  backend.deploy:
+  sample.action:
     command: ` + script + `
     timeout: 5m
     parameters:
@@ -323,7 +329,7 @@ security:
     cert_file: ` + cert + `
     key_file: ` + key + `
 actions:
-  backend.deploy:
+  sample.action:
     command: ` + script + `
     timeout: 48h
 authorization:
@@ -392,7 +398,7 @@ security:
     cert_file: ` + cert + `
     key_file: ` + key + `
 actions:
-  backend.deploy:
+  sample.action:
     command: ` + script + `
     timeout: 5m
     parameters:

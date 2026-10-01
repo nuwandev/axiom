@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Repeatable release build: linux/amd64 and linux/arm64 only (the only
-# architectures actually built and tested for this project — no fake
-# targets). Also packages each architecture as an RPM (RHEL/Rocky/Alma/
-# CentOS Stream — the only OS family this project targets) if `nfpm` and
-# `envsubst` are available; otherwise skips RPM packaging with a warning
-# and still produces the raw binaries, so this script keeps working for
-# anyone who hasn't set up RPM tooling. Run from the repository root.
+# Repeatable release build:
+#   - linux/amd64 and linux/arm64 (RHEL-family target), each also packaged as
+#     an RPM when `nfpm` + `envsubst` are available;
+#   - windows/amd64 (Windows Server 2022 / Windows 10+ Pro target), also
+#     packaged as an offline install bundle (zip + Install-Axiom.ps1) when
+#     `zip` is available, and as a double-clickable MSI (wrapping the same
+#     scripts, see packaging/windows/msi/Axiom.wxs) when `wix` is available.
+# Missing packaging tools are skipped with a warning; the raw binaries are
+# always produced. Run from the repository root.
 #
 # Usage: VERSION=v1.0.0 ./scripts/build-release.sh
 set -euo pipefail
@@ -60,6 +62,59 @@ for GOARCH in amd64 arm64; do
     rm -f "$GENERATED_SPEC"
   fi
 done
+
+# --- Windows Server 2022 / Windows 10+ Pro (amd64) ---------------------------
+# Native Windows binary, an offline install bundle (zip + Install-Axiom.ps1,
+# auditable as plain text before you run it), and an MSI for a double-click /
+# Add-Remove-Programs / `msiexec /qn` install. The MSI wraps the exact same
+# Install-Axiom.ps1 / Uninstall-Axiom.ps1 as custom actions rather than
+# reimplementing the ACL/service logic — see packaging/windows/msi/Axiom.wxs.
+WIN_NAME="axiom-${VERSION}-windows-amd64.exe"
+echo "building ${WIN_NAME}..."
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
+  -trimpath \
+  -ldflags "-s -w -X github.com/nuwandev/axiom/internal/api.Version=${VERSION#v} -X main.commit=${COMMIT}" \
+  -o "${OUT_DIR}/${WIN_NAME}" \
+  ./cmd/axiom
+
+if command -v zip >/dev/null 2>&1 || command -v wix >/dev/null 2>&1; then
+  WIN_STAGE="$(mktemp -d)"
+  cp "${OUT_DIR}/${WIN_NAME}" "${WIN_STAGE}/axiom.exe"
+  cp packaging/windows/Install-Axiom.ps1 packaging/windows/Uninstall-Axiom.ps1 "${WIN_STAGE}/"
+  cp packaging/windows/README.md "${WIN_STAGE}/README.md"
+  cp configs/example-windows.yaml "${WIN_STAGE}/"
+  mkdir -p "${WIN_STAGE}/capability-examples"
+  cp scripts/examples/hello-world.ps1.sample "${WIN_STAGE}/capability-examples/"
+
+  if command -v zip >/dev/null 2>&1; then
+    echo "packaging the Windows install bundle (zip)..."
+    (cd "${WIN_STAGE}" && zip -q -r "${REPO_ROOT}/${OUT_DIR}/axiom-${VERSION}-windows-amd64.zip" .)
+  else
+    echo "WARNING: 'zip' not found — skipping the Windows zip bundle (raw .exe still built)."
+  fi
+
+  if command -v wix >/dev/null 2>&1; then
+    # MSI ProductVersion is limited to 3 numeric fields (no "v" prefix, no
+    # pre-release suffix): v1.2.0-rc1 -> 1.2.0
+    MSI_VERSION="$(echo "$RPM_VERSION" | sed -E 's/-.*$//')"
+    if [[ ! "$MSI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      MSI_VERSION="0.0.0"
+      echo "WARNING: VERSION=${VERSION} doesn't reduce to a plain X.Y.Z for the MSI; using ${MSI_VERSION}"
+    fi
+    echo "packaging the Windows MSI (version ${MSI_VERSION})..."
+    wix build packaging/windows/msi/Axiom.wxs \
+      -d "ProductVersion=${MSI_VERSION}" -d "StagingDir=${WIN_STAGE}" \
+      -arch x64 -o "${REPO_ROOT}/${OUT_DIR}/axiom-${VERSION}-windows-amd64.msi"
+  else
+    echo "WARNING: 'wix' not found — skipping the Windows MSI (zip/.exe still built)."
+    echo "  install: dotnet tool install --global wix --version 5.0.2"
+    echo "  (pin to v5 — v7+ requires accepting a paid Open Source Maintenance Fee EULA to build)"
+  fi
+
+  rm -rf "${WIN_STAGE}"
+else
+  echo "WARNING: neither 'zip' nor 'wix' found — skipping all Windows packaging (raw .exe still built)."
+fi
 
 echo "generating checksums..."
 (

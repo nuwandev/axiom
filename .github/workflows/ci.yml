@@ -30,6 +30,9 @@ jobs:
             exit 1
           fi
 
+      - name: go mod verify
+        run: go mod verify
+
       - name: go build
         run: go build ./...
 
@@ -41,6 +44,69 @@ jobs:
 
       - name: go test -race
         run: go test ./... -race
+
+      - name: windows cross-compile
+        # The Windows platform code (service adapter, PowerShell executor, Job
+        # Objects, NTFS ACL checks) is not exercised by the Linux job above.
+        # This step keeps it compiling and vetting; real behaviour is verified
+        # on a Windows Server 2022 host before a release (see docs/development.md).
+        run: |
+          GOOS=windows GOARCH=amd64 go build ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+
+      - name: powershell scripts are ASCII
+        # A non-ASCII byte in a BOM-less .ps1 is mis-decoded by Windows
+        # PowerShell 5.1 (ANSI fallback) and can silently break parsing.
+        # Keep every shipped script and sample pure ASCII.
+        run: |
+          hits="$(grep -rlP '[^\x00-\x7F]' --include='*.ps1' --include='*.ps1.sample' . || true)"
+          if [ -n "$hits" ]; then
+            echo "non-ASCII bytes in PowerShell files (breaks Windows PowerShell 5.1):"
+            echo "$hits"
+            exit 1
+          fi
+
+  windows-test:
+    name: windows build, vet, test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23"
+          check-latest: true
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        # Unit + non-elevated integration coverage (executor/PowerShell, Job
+        # Object containment, winsec pure logic + Win32 read path, job manager).
+        # Full config.Load and mTLS API integration on Windows need an
+        # ACL-configured host and are covered by the pre-release validation
+        # pass, not here.
+        run: go test ./...
+
+      - name: powershell scripts parse under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $bad = $false
+          Get-ChildItem -Recurse -Include *.ps1, *.ps1.sample -File |
+            Where-Object { $_.FullName -notmatch '\\vendor\\' } |
+            ForEach-Object {
+              $errs = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errs)
+              if ($errs) {
+                $bad = $true
+                Write-Host "PARSE FAIL: $($_.FullName)"
+                $errs | ForEach-Object { Write-Host "  $($_.Message)" }
+              }
+            }
+          if ($bad) { exit 1 }
 
   rpm-package-smoke-test:
     name: RPM package builds

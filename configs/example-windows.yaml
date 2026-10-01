@@ -1,0 +1,69 @@
+# Example Axiom agent configuration for Windows Server 2022. Copy to
+# C:\ProgramData\Axiom\config.yaml and adjust for your environment.
+#
+# The schema is identical to the Linux example (configs/example.yaml). The
+# only differences are path values and that each action's `command` must be
+# an absolute path to an approved PowerShell (.ps1) capability script.
+#
+# Write paths as plain (unquoted) YAML scalars with backslashes, as below.
+# Axiom rejects a path that is not already in its clean form, so use
+# C:\... not C:/... and no "." / ".." segments.
+
+agent:
+  id: example-win-uat-01
+  name: Example Windows UAT Agent
+  listen:
+    address: 0.0.0.0
+    port: 8443
+
+security:
+  mtls:
+    ca_file: C:\ProgramData\Axiom\certs\ca.crt
+    cert_file: C:\ProgramData\Axiom\certs\server.crt
+    key_file: C:\ProgramData\Axiom\certs\server.key
+  # health:
+  #   allow_anonymous: true   # off by default; opt in only if your network
+  #                           # health check cannot present a client cert.
+
+audit:
+  path: C:\ProgramData\Axiom\logs\audit.log
+
+# Both optional; shown here at their built-in defaults.
+output:
+  max_bytes: 2097152   # 2 MiB cap on captured stdout/stderr, per stream, per job
+
+jobs:
+  max_history: 1000    # in-memory job count kept for GET /v1/jobs/{id}; not durable.
+                        # The audit log is the durable execution record.
+
+actions:
+  # Trigger this first after a fresh install to confirm mTLS, authorization,
+  # script execution and the audit trail all actually work end-to-end --
+  # see docs/getting-started.md. No external dependency, no side effect.
+  hello.world:
+    command: C:\ProgramData\Axiom\capabilities\hello-world.ps1
+    timeout: 30s
+    concurrency: shared
+
+  # Add your own actions below -- Axiom has no opinion on what they do.
+  # Each one is just a name, a path to a script you wrote and reviewed, and
+  # optionally some typed, pattern-validated parameters. Uncomment and
+  # adapt this shape for your first real action:
+  #
+  # your.action.name:
+  #   command: C:\ProgramData\Axiom\capabilities\your-script.ps1
+  #   timeout: 10m
+  #   concurrency: exclusive   # or "shared" if concurrent runs are safe
+  #   parameters:
+  #     some_param:
+  #       type: string
+  #       pattern: '^[a-zA-Z0-9._-]{1,128}$'
+  #       required: true
+
+authorization:
+  identities:
+    # The key must match the client certificate's Common Name exactly.
+    example-ci:
+      actions:
+        - hello.world
+        # - your.action.name

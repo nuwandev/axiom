@@ -43,6 +43,14 @@ if [[ -z "${SYSTEMD_UNIT_SRC:-}" ]]; then
 	SYSTEMD_UNIT_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packaging/axiom.service"
 fi
 
+# Same override pattern as SYSTEMD_UNIT_SRC above. hello-world.sh is the one
+# example action this script places directly as a live, ready-to-run script
+# rather than requiring a manual copy — see the comment at its install site
+# below for why that's safe specifically for this one script.
+if [[ -z "${HELLO_WORLD_SRC:-}" ]]; then
+	HELLO_WORLD_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/examples/hello-world.sh.sample"
+fi
+
 log() { printf '[install] %s\n' "$1"; }
 fail() { printf '[install] ERROR: %s\n' "$1" >&2; exit 1; }
 
@@ -110,7 +118,7 @@ install -d -o "$AXIOM_USER" -g "$AXIOM_GROUP" -m 0750 "$STATE_DIR"
 log "filesystem layout ready:"
 log "  $ETC_DIR        (root:$AXIOM_GROUP, 0750) — config"
 log "  $CERTS_DIR  (root:$AXIOM_GROUP, 0750) — mTLS material (place manually)"
-log "  $ACTIONS_DIR       (root:$AXIOM_GROUP, 0750) — action scripts (place manually)"
+log "  $ACTIONS_DIR       (root:$AXIOM_GROUP, 0750) — action scripts (hello-world.sh auto-placed; your own go here manually)"
 log "  $LOG_DIR        ($AXIOM_USER:$AXIOM_GROUP, 0750) — audit log"
 log "  $STATE_DIR        ($AXIOM_USER:$AXIOM_GROUP, 0750) — \$HOME for the axiom account"
 
@@ -124,6 +132,25 @@ log "installed binary to $BIN_DEST"
 install -o root -g root -m 0644 "$SYSTEMD_UNIT_SRC" "$SYSTEMD_UNIT_DEST"
 systemctl daemon-reload
 log "installed systemd unit to $SYSTEMD_UNIT_DEST and reloaded systemd"
+
+# --- hello-world capability (auto-placed, unlike a real action you add) -----
+# Any real action you configure needs its own script reviewed and placed by
+# you -- Axiom has no opinion on what your actions do and ships no example
+# of one. hello-world is different: it is authored and reviewed as part of
+# Axiom itself, is the same fixed, side-effect-free content on every
+# install (it only prints a line and exits 0), and exists purely so a
+# fresh install has one safe, zero-dependency action to trigger immediately
+# -- see docs/getting-started.md. Mirrors Install-Axiom.ps1's equivalent
+# step on Windows.
+HELLO_WORLD_DEST="$ACTIONS_DIR/hello-world.sh"
+if [[ ! -f "$HELLO_WORLD_DEST" ]]; then
+	if [[ -f "$HELLO_WORLD_SRC" ]]; then
+		install -o root -g "$AXIOM_GROUP" -m 0750 "$HELLO_WORLD_SRC" "$HELLO_WORLD_DEST"
+		log "wrote the hello-world capability to $HELLO_WORLD_DEST (ready to trigger immediately, see docs/getting-started.md)"
+	else
+		log "NOTE: hello-world.sh.sample not found at '$HELLO_WORLD_SRC' -- skipping (set HELLO_WORLD_SRC to override, e.g. for a standalone download without the full repo checkout)"
+	fi
+fi
 
 # --- Fail-safe checks on what the operator still needs to provide ------------
 

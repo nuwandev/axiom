@@ -1,5 +1,10 @@
 # Getting Started
 
+**On Windows Server 2022 or Windows 10/11 Pro?** This page is the Linux
+path — see [`INSTALL-WINDOWS.md`](INSTALL-WINDOWS.md) instead, which covers
+the equivalent "nothing installed" to "one action triggered" walkthrough
+for Windows.
+
 This is the fast path from "nothing installed" to "one action successfully
 triggered." For the complete reference — permissions, systemd hardening,
 SELinux, upgrade, rollback, uninstall, troubleshooting — see
@@ -66,10 +71,13 @@ sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yam
 sudo vi /etc/axiom/config.yaml
 ```
 
-Place each action's script under `/opt/axiom/actions/`, owned `root:axiom`,
-mode `0750`:
+The example config already wires up `hello.world`, a zero-dependency action
+that just confirms the whole chain works — review it, then place it (and any
+real action scripts you're adding) under `/opt/axiom/actions/`, owned
+`root:axiom`, mode `0750`:
 
 ```bash
+sudo install -o root -g axiom -m 0750 scripts/examples/hello-world.sh.sample /opt/axiom/actions/hello-world.sh
 sudo install -o root -g axiom -m 0750 my-deploy.sh /opt/axiom/actions/
 ```
 
@@ -97,6 +105,20 @@ curl --cacert ca.crt --cert client.crt --key client.key \
 Expect `{"status":"ok","agent":"<agent.id>","version":"..."}`.
 
 ## 7. Trigger an action
+
+Trigger `hello.world` first — it needs no parameters and no real backend,
+so a failure here means something in steps 1–6 needs attention before you
+move on to a real action:
+
+```bash
+curl --cacert ca.crt --cert client.crt --key client.key \
+  -X POST https://<host>:<port>/v1/actions/hello.world \
+  -H 'Content-Type: application/json' -d '{}'
+# {"job_id":"01J...","status":"queued"}
+```
+
+Once that comes back `succeeded` (check with the `GET` below), move on to
+your real action the same way:
 
 ```bash
 curl --cacert ca.crt --cert client.crt --key client.key \

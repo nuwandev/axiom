@@ -31,36 +31,33 @@ jobs:
                         # The audit log is the durable execution record.
 
 actions:
-  backend.deploy:
-    command: /opt/axiom/actions/backend-deploy.sh
-    timeout: 10m
-    concurrency: exclusive
-    parameters:
-      image_tag:
-        type: string
-        pattern: '^[a-zA-Z0-9._-]{1,128}$'
-        required: true
-
-  backend.rollback:
-    command: /opt/axiom/actions/backend-rollback.sh
-    timeout: 10m
-    concurrency: exclusive
-    parameters:
-      image_tag:
-        type: string
-        pattern: '^[a-zA-Z0-9._-]{1,128}$'
-        required: true
-
-  service.restart:
-    command: /opt/axiom/actions/service-restart.sh
-    timeout: 2m
+  # Trigger this first after a fresh install to confirm mTLS, authorization,
+  # script execution and the audit trail all actually work end-to-end --
+  # see docs/getting-started.md. No external dependency, no side effect.
+  hello.world:
+    command: /opt/axiom/actions/hello-world.sh
+    timeout: 30s
     concurrency: shared
+
+  # Add your own actions below -- Axiom has no opinion on what they do.
+  # Each one is just a name, a path to a script you wrote and reviewed, and
+  # optionally some typed, pattern-validated parameters. Uncomment and
+  # adapt this shape for your first real action:
+  #
+  # your.action.name:
+  #   command: /opt/axiom/actions/your-script.sh
+  #   timeout: 10m
+  #   concurrency: exclusive   # or "shared" if concurrent runs are safe
+  #   parameters:
+  #     some_param:
+  #       type: string
+  #       pattern: '^[a-zA-Z0-9._-]{1,128}$'
+  #       required: true
 
 authorization:
   identities:
     # The key must match the client certificate's Common Name exactly.
     example-ci:
       actions:
-        - backend.deploy
-        - backend.rollback
-        - service.restart
+        - hello.world
+        # - your.action.name

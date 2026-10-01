@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Axiom Windows installer (WiX v5 -> MSI).
+
+  Ships the release bundle (axiom.exe + Install-Axiom.ps1 +
+  Uninstall-Axiom.ps1 + example-windows.yaml + capability samples) under
+  Program Files, then invokes the SAME scripts already validated against
+  real Windows Server 2022 to do the actual work (Mark-of-the-Web removal,
+  NTFS ACLs, %ProgramData%\Axiom layout, service registration under
+  NT SERVICE\axiom). The MSI is a professional, double-clickable,
+  Add/Remove Programs-visible, silently-deployable
+  ("msiexec /i Axiom.msi /qn") wrapper around them; it does not
+  reimplement any install logic, so a fix to Install-Axiom.ps1 /
+  Uninstall-Axiom.ps1 fixes both the zip-based and MSI-based install paths
+  at once.
+
+  Build (see scripts/build-release.sh, which does this automatically when
+  `wix` is on PATH):
+    wix build packaging/windows/msi/Axiom.wxs ^
+      -d ProductVersion=1.2.0 -d StagingDir=<dir with the release bundle> ^
+      -arch x64 -o dist/Axiom.msi
+
+  UpgradeCode is fixed forever; do not change it, it is what lets a newer
+  MSI cleanly upgrade an older install via the same product family.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Axiom"
+           Manufacturer="nuwandev"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="8CD9E605-4EB8-4B33-B816-308E954C107C"
+           Scope="perMachine"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="Axiom automation agent" Manufacturer="nuwandev" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Axiom is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPHELPLINK" Value="https://github.com/nuwandev/axiom" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPCOMMENTS"
+      Value="Authenticated mTLS API that triggers predefined, server-local PowerShell capability scripts. No arbitrary command execution." />
+
+    <!--
+      Set to 1 (msiexec /i Axiom.msi STARTSERVICE=1) to have the installer
+      start the service immediately; only appropriate for an automated
+      deployment that has already staged certs + config.yaml before running
+      the MSI. Left unset (do not start) for an interactive install, the
+      same safe default Install-Axiom.ps1 itself uses.
+    -->
+    <Property Id="STARTSERVICE" Value="0" />
+
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="Axiom">
+        <Directory Id="CAPEXAMPLESFOLDER" Name="capability-examples" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="AxiomFiles" Directory="INSTALLFOLDER">
+      <Component Id="AxiomExe" Guid="0F4C9E9C-2B0F-4C1C-9C3A-6C0F6B6E5A11">
+        <File Id="AxiomExe" Source="$(var.StagingDir)\axiom.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="InstallScript" Guid="9A6B8B62-3C3E-4E63-8D19-5AF2B1E2B5A2">
+        <File Id="InstallScript" Source="$(var.StagingDir)\Install-Axiom.ps1" KeyPath="yes" />
+      </Component>
+      <Component Id="UninstallScript" Guid="7B7CDE2A-9F1E-4B3E-9E5A-3E2C1E4C3B93">
+        <File Id="UninstallScript" Source="$(var.StagingDir)\Uninstall-Axiom.ps1" KeyPath="yes" />
+      </Component>
+      <Component Id="ExampleConfig" Guid="2C6E1E9F-2E7C-4A5C-95F1-6B7C8D9E0A14">
+        <File Id="ExampleConfig" Source="$(var.StagingDir)\example-windows.yaml" KeyPath="yes" />
+      </Component>
+      <Component Id="ReadmeFile" Guid="5E4A2B1C-8D3F-4C6E-B7A8-1F2E3D4C5B95">
+        <File Id="ReadmeFile" Source="$(var.StagingDir)\README.md" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="AxiomCapabilityExamples" Directory="CAPEXAMPLESFOLDER">
+      <Component Id="SampleHelloWorld" Guid="7DD946C5-083B-471C-AD50-318AF74DB834">
+        <File Id="SampleHelloWorld" Source="$(var.StagingDir)\capability-examples\hello-world.ps1.sample" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Axiom Agent" Level="1">
+      <ComponentGroupRef Id="AxiomFiles" />
+      <ComponentGroupRef Id="AxiomCapabilityExamples" />
+    </Feature>
+
+    <!--
+      Execute="deferred" Impersonate="no": these run elevated as SYSTEM
+      regardless of the installing user's own token, the same posture that
+      resolved the icacls /setowner failure found during real-host
+      validation (SYSTEM can always take ownership; a plain administrator
+      token sometimes cannot without extra privilege elevation).
+      -ExecutionPolicy Bypass here is about the *installer's own* scripts
+      running under whatever the machine's script-execution policy is, the
+      same reasoning docs/windows-security.md gives for why Axiom itself
+      never depends on execution policy as a boundary; it is not related
+      to, and does not touch, the fixed PowerShell invocation Axiom uses at
+      runtime to run capability scripts.
+    -->
+    <CustomAction Id="RunInstall_Start"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]Install-Axiom.ps1&quot; -BinarySource &quot;[INSTALLFOLDER]axiom.exe&quot; -Start"
+                  Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="RunInstall_NoStart"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]Install-Axiom.ps1&quot; -BinarySource &quot;[INSTALLFOLDER]axiom.exe&quot;"
+                  Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="RunUninstall"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]Uninstall-Axiom.ps1&quot;"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RunInstall_Start" After="InstallFiles" Condition="NOT Installed AND STARTSERVICE = &quot;1&quot;" />
+      <Custom Action="RunInstall_NoStart" After="InstallFiles" Condition="NOT Installed AND STARTSERVICE &lt;&gt; &quot;1&quot;" />
+      <!-- Runs for a plain uninstall AND for the old version's removal
+           during a major upgrade; the new version's own install action
+           re-registers the service (axiom.exe -install-service is
+           idempotent), so this is safe either way. -->
+      <Custom Action="RunUninstall" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+    </InstallExecuteSequence>
+
+  </Package>
+</Wix>

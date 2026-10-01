@@ -1,9 +1,19 @@
-// Package executor runs configured action scripts as child processes with
-// enforced timeouts and cancellation (SIGTERM to the whole process group,
-// a bounded grace period, then SIGKILL if it's still alive), a
-// PR_SET_PDEATHSIG safety net so the direct child can't outlive an
-// unexpected death of the Axiom process itself, and bounded output
-// capture.
+// Package executor runs configured capability scripts as child processes with
+// enforced timeouts and cancellation, whole-process-tree containment so a
+// script's descendants can be killed as a unit and cannot outlive an
+// unexpected death of the Axiom process itself, and bounded output capture.
+//
+// The two platform-specific concerns are isolated behind small internal
+// seams: buildCommand turns a Spec into the concrete *exec.Cmd (a direct
+// invocation on unix; a fixed powershell.exe -NoProfile -NonInteractive
+// -ExecutionPolicy Bypass -File <script> invocation on Windows, see
+// launch_windows.go's buildCommand for why Bypass is safe here), and
+// processContainment isolates the
+// child tree (a process group + PR_SET_PDEATHSIG on unix; a Job Object with
+// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE on Windows). Spec itself carries only a
+// script path, an environment, a timeout, and an output cap — there is no
+// field through which a caller could supply an executable, an argument, or
+// PowerShell source.
 package executor
 
 import (
@@ -18,9 +28,12 @@ import (
 
 // Spec describes one process execution request.
 type Spec struct {
-	// Command is the absolute path to the script/binary to run. It is
-	// invoked directly (never through a shell), so shell metacharacters in
-	// arguments or environment values have no special meaning.
+	// Command is the absolute path to the approved capability script to run.
+	// On unix it is invoked directly (never through a shell). On Windows it
+	// is passed as the sole -File argument to a fixed powershell.exe
+	// invocation. Either way it is the only variable element of the child
+	// process's argument vector; there is no Spec field for extra arguments,
+	// an alternate executable, or inline script source.
 	Command string
 	// Env is the complete environment passed to the child process. Callers
 	// are responsible for constructing this from a validated, known set of
@@ -36,12 +49,42 @@ type Spec struct {
 	MaxOutputBytes int
 }
 
-// TerminationGracePeriod is how long a timed-out or cancelled process group
-// is given to exit after SIGTERM before Run escalates to SIGKILL. This is a
-// fixed internal constant, not user-configurable: it exists purely to give
-// a well-behaved script a bounded chance to clean up (e.g. a partially
-// applied change), not as a tunable product surface.
+// TerminationGracePeriod is how long a timed-out or cancelled process tree
+// is given to exit after the first (cooperative) stop request before Run
+// escalates to a forced kill. This is a fixed internal constant, not
+// user-configurable: it exists purely to give a well-behaved script a
+// bounded chance to clean up (e.g. a partially applied change), not as a
+// tunable product surface.
+//
+// It only takes effect where the platform has a cooperative stop signal.
+// On unix that is SIGTERM-then-SIGKILL. On Windows a service has no console
+// and therefore no way to deliver a Ctrl-Break equivalent, so the first
+// stop request already terminates the Job Object; the grace window is then
+// never actually waited on (Wait returns immediately).
 const TerminationGracePeriod = 5 * time.Second
+
+// processContainment isolates a spawned child process and every descendant
+// it creates, so the whole tree can be stopped as a unit on timeout or
+// cancellation and can never outlive an uncontrolled death of the Axiom
+// process itself. One instance is used per Run call.
+type processContainment interface {
+	// prepare sets the platform SysProcAttr on cmd before it is started.
+	prepare(cmd *exec.Cmd)
+	// started is called once, immediately after a successful cmd.Start().
+	// A non-nil error means containment could not be established and the
+	// child must be killed rather than allowed to run uncontained.
+	started(cmd *exec.Cmd) error
+	// terminate requests a cooperative stop of the whole tree (unix:
+	// SIGTERM to the process group; Windows: TerminateJobObject, which is
+	// not cooperative but is the only tree-wide stop available to a
+	// service).
+	terminate(cmd *exec.Cmd)
+	// kill forcibly kills the whole tree.
+	kill(cmd *exec.Cmd)
+	// release drops any OS resources held by the containment. It is always
+	// called, exactly once, before Run returns.
+	release()
+}
 
 // Result is the outcome of a completed (or killed) execution.
 type Result struct {
@@ -70,9 +113,12 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 		return nil, fmt.Errorf("executor: MaxOutputBytes must be positive")
 	}
 
-	cmd := exec.Command(spec.Command)
+	cmd := buildCommand(spec)
 	cmd.Env = spec.Env
-	configureProcessGroup(cmd)
+
+	cont := newContainment()
+	cont.prepare(cmd)
+	defer cont.release()
 
 	stdout := newCappedBuffer(spec.MaxOutputBytes)
 	stderr := newCappedBuffer(spec.MaxOutputBytes)
@@ -84,6 +130,16 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 	if err := cmd.Start(); err != nil {
 		result.FinishedAt = time.Now()
 		return nil, fmt.Errorf("starting process: %w", err)
+	}
+
+	if err := cont.started(cmd); err != nil {
+		// Containment could not be established: kill the child and fail
+		// closed rather than run a script whose descendants we cannot
+		// reliably terminate.
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		result.FinishedAt = time.Now()
+		return nil, fmt.Errorf("establishing process containment: %w", err)
 	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, spec.Timeout)
@@ -103,20 +159,23 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 			result.TimedOut = true
 		}
 
-		// Ask the whole process group to exit cleanly first (SIGTERM), so
-		// a well-behaved script gets a bounded chance to clean up (e.g. an
+		// Request a cooperative stop of the whole tree first, so a
+		// well-behaved script gets a bounded chance to clean up (e.g. an
 		// in-progress docker/compose operation) instead of always being
-		// SIGKILLed mid-step. A script that ignores SIGTERM, or a group
-		// that's still alive once TerminationGracePeriod elapses, is then
+		// force-killed mid-step. A script that ignores the request, or a
+		// tree still alive once TerminationGracePeriod elapses, is then
 		// force-killed — this is a bound, not an indefinite grace period,
 		// so a hung/ignoring script still cannot outlive the timeout by
-		// more than TerminationGracePeriod.
-		terminateProcessGroup(cmd)
+		// more than TerminationGracePeriod. On Windows terminate already
+		// kills the Job Object, so waitErr fires immediately and the grace
+		// timer is never reached.
+		cont.terminate(cmd)
 		select {
 		case <-waitErr:
-			// Exited on its own in response to SIGTERM.
+			// Exited in response to the cooperative stop (or was already
+			// force-killed, on Windows).
 		case <-time.After(TerminationGracePeriod):
-			killProcessGroup(cmd)
+			cont.kill(cmd)
 			<-waitErr // reap regardless; ignore the exit error from a killed process
 		}
 	}
