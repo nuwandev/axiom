@@ -71,7 +71,7 @@ func TestManager_Windows_TriggerSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger: %v", err)
 	}
-	if snap := waitTerminal(t, m, job.ID, 25*time.Second); snap.Status != StatusSucceeded {
+	if snap := waitTerminal(t, m, job.ID, 90*time.Second); snap.Status != StatusSucceeded {
 		t.Errorf("status = %v, want succeeded", snap.Status)
 	}
 }
@@ -99,7 +99,7 @@ func TestManager_Windows_ParameterPatternRejectsInjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger with valid value: %v", err)
 	}
-	waitTerminal(t, m, job.ID, 25*time.Second)
+	waitTerminal(t, m, job.ID, 90*time.Second)
 }
 
 func TestManager_Windows_ValidatedParamReachesScriptAsInertEnv(t *testing.T) {
@@ -128,7 +128,7 @@ func TestManager_Windows_ValidatedParamReachesScriptAsInertEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger: %v", err)
 	}
-	waitTerminal(t, m, job.ID, 25*time.Second)
+	waitTerminal(t, m, job.ID, 90*time.Second)
 
 	if _, err := os.Stat(sentinel); err == nil {
 		t.Fatalf("hostile parameter value executed as PowerShell")

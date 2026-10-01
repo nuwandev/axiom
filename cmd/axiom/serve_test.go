@@ -138,8 +138,8 @@ func TestServe_StartsAndShutsDownOnContextCancel(t *testing.T) {
 	}
 	if !served {
 		cancel()
-		<-errc
-		t.Fatalf("serve did not answer an mTLS /health request: %v", lastErr)
+		serveErr := <-errc
+		t.Fatalf("serve did not answer an mTLS /health request: %v (serve itself returned: %v)", lastErr, serveErr)
 	}
 
 	cancel()
