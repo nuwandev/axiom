@@ -105,19 +105,30 @@ func CheckPlatformPrerequisites() error {
 // something this project does (see buildCommand's comment and
 // docs/windows-security.md for why that is safe to rely on).
 func checkExecutionPolicy(powerShellExe string) error {
-	// Single-quoted separator, deliberately: a double-quoted literal here
-	// (the original form) requires getting two independent layers of
-	// escaping right at once -- Go's own Windows argv-to-command-line
-	// escaping, then PowerShell's own tokenizer re-parsing that same
-	// argument -- and that combination is a well-known fragile spot across
-	// different Windows/PowerShell builds. VALIDATION-DISCOVERED: it broke
-	// specifically on GitHub's hosted windows-latest CI runner (exit status
-	// 1, no further detail from a bare .Output() error) despite working on
-	// every real host this project was otherwise validated against. A
-	// single-quoted PowerShell string is verbatim -- no interpolation, no
-	// escaping -- which removes the ambiguity entirely rather than trying
-	// to get both escaping layers exactly right.
-	cmd := exec.Command(powerShellExe, "-NoProfile", "-NonInteractive", "-Command",
+	// -ExecutionPolicy Bypass on THIS invocation too, deliberately: this is
+	// not the same as buildCommand's Bypass (that one is about letting a
+	// capability script run), it's needed here just to let PowerShell load
+	// the module Get-ExecutionPolicy itself lives in.
+	// VALIDATION-DISCOVERED: without it, this call failed on GitHub's
+	// hosted windows-latest CI runner with "CouldNotAutoloadMatchingModule"
+	// -- PowerShell's automatic module loading for
+	// Microsoft.PowerShell.Security (where Get-ExecutionPolicy is defined)
+	// is itself gated by the *local* execution policy when running
+	// non-interactively, and that runner's local policy is apparently
+	// Restricted by default (the same default this file's buildCommand
+	// comment already documents for Windows 10/11 Pro). A genuine
+	// bootstrapping problem: checking the policy requires loading a module
+	// that a restrictive policy blocks from autoloading. Bypass here fixes
+	// that without weakening the actual check -- Group Policy (this
+	// function's whole reason for existing) still overrides Bypass exactly
+	// as it always does, so a real GPO is still detected correctly; this
+	// only removes the *local*-policy-caused module-load failure, which was
+	// never the thing being checked for in the first place.
+	//
+	// Single-quoted separator ('|'), not double-quoted: avoids a second,
+	// unrelated layer of argument-escaping ambiguity between Go's Windows
+	// argv-to-command-line escaping and PowerShell's own tokenizer.
+	cmd := exec.Command(powerShellExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
 		`(Get-ExecutionPolicy -Scope MachinePolicy).ToString() + '|' + (Get-ExecutionPolicy -Scope UserPolicy).ToString()`,
 	)
 	var stderr bytes.Buffer
