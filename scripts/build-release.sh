@@ -22,7 +22,7 @@ REPO_ROOT="$(pwd)"
 # docs/INSTALL.md must already point at this version — refuse to build
 # otherwise. Non-tag builds (dev snapshots, throwaway versions) skip this.
 if [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  scripts/sync-doc-versions.sh --check "$VERSION"
+  bash scripts/sync-doc-versions.sh --check "$VERSION"
 fi
 
 rm -rf "$OUT_DIR"
