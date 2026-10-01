@@ -3,6 +3,7 @@
 package executor
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -104,10 +105,28 @@ func CheckPlatformPrerequisites() error {
 // something this project does (see buildCommand's comment and
 // docs/windows-security.md for why that is safe to rely on).
 func checkExecutionPolicy(powerShellExe string) error {
-	out, err := exec.Command(powerShellExe, "-NoProfile", "-NonInteractive", "-Command",
-		`(Get-ExecutionPolicy -Scope MachinePolicy).ToString() + "|" + (Get-ExecutionPolicy -Scope UserPolicy).ToString()`,
-	).Output()
+	// Single-quoted separator, deliberately: a double-quoted literal here
+	// (the original form) requires getting two independent layers of
+	// escaping right at once -- Go's own Windows argv-to-command-line
+	// escaping, then PowerShell's own tokenizer re-parsing that same
+	// argument -- and that combination is a well-known fragile spot across
+	// different Windows/PowerShell builds. VALIDATION-DISCOVERED: it broke
+	// specifically on GitHub's hosted windows-latest CI runner (exit status
+	// 1, no further detail from a bare .Output() error) despite working on
+	// every real host this project was otherwise validated against. A
+	// single-quoted PowerShell string is verbatim -- no interpolation, no
+	// escaping -- which removes the ambiguity entirely rather than trying
+	// to get both escaping layers exactly right.
+	cmd := exec.Command(powerShellExe, "-NoProfile", "-NonInteractive", "-Command",
+		`(Get-ExecutionPolicy -Scope MachinePolicy).ToString() + '|' + (Get-ExecutionPolicy -Scope UserPolicy).ToString()`,
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
+		if stderr.Len() > 0 {
+			return fmt.Errorf("checking PowerShell execution policy: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
 		return fmt.Errorf("checking PowerShell execution policy: %w", err)
 	}
 	parts := strings.SplitN(strings.TrimSpace(string(out)), "|", 2)
