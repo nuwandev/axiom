@@ -1,7 +1,8 @@
 name: Release
 
 # Builds every published artifact (linux/amd64, linux/arm64 + RPMs,
-# windows/amd64 + offline install bundle) with scripts/build-release.sh and
+# windows/amd64 + offline install bundle + MSI) with scripts/build-release.sh,
+# scripts/build-msi.sh (on a Windows runner) and
 # publishes them to a GitHub Release.
 #
 # Triggered by pushing a vX.Y.Z tag, per CONTRIBUTING.md's "Cutting a
@@ -29,9 +30,12 @@ permissions:
   contents: write
 
 jobs:
-  build-and-publish:
+  build:
     name: build release artifacts
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      publish: ${{ steps.version.outputs.publish }}
     env:
       # Pin the exact toolchain patch version release binaries are built
       # with, independent of whatever the runner image defaults to.
@@ -55,7 +59,7 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: install packaging tools (nfpm, zip, envsubst, wix)
+      - name: install packaging tools (nfpm, zip, envsubst)
         run: |
           curl -sL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
             | tar -xz -C /usr/local/bin nfpm
@@ -63,12 +67,6 @@ jobs:
           nfpm --version
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends rpm gettext-base zip
-          # Pinned to v5: v7+ requires accepting a paid Open Source
-          # Maintenance Fee EULA just to build, which this project does not
-          # depend on. WiX v4/v5's dotnet-tool CLI runs cross-platform,
-          # including here on the Linux runner.
-          dotnet tool install --global wix --version 5.0.2
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: go vet / test (release must build clean)
         run: |
@@ -78,19 +76,90 @@ jobs:
       - name: build release artifacts
         run: VERSION=${{ steps.version.outputs.value }} bash scripts/build-release.sh
 
-      - name: upload build artifacts (workflow run, every trigger)
+      - name: upload linux/windows artifacts for the MSI and publish jobs
         uses: actions/upload-artifact@v4
         with:
-          name: axiom-${{ steps.version.outputs.value }}
+          name: dist-base
           path: dist/${{ steps.version.outputs.value }}/*
           if-no-files-found: error
           retention-days: 14
 
+  # WiX only supports Windows (on the Linux runner it mis-resolves the
+  # source paths in Axiom.wxs), so the MSI is built here from the exact
+  # axiom.exe the build job produced. Pinned to WiX v5: v7+ requires
+  # accepting a paid Open Source Maintenance Fee EULA just to build.
+  msi:
+    name: build Windows MSI
+    needs: build
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-base
+          path: dist/${{ needs.build.outputs.version }}
+
+      - name: install WiX
+        shell: bash
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: build MSI
+        shell: bash
+        run: bash scripts/build-msi.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-msi
+          path: dist/${{ needs.build.outputs.version }}/*.msi
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: collect and publish
+    needs: [build, msi]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-base
+          path: dist/${{ needs.build.outputs.version }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-msi
+          path: dist/${{ needs.build.outputs.version }}
+
+      # build-release.sh wrote SHA256SUMS before the MSI existed; regenerate
+      # so the published checksums cover every published file.
+      - name: regenerate checksums over the full artifact set
+        run: |
+          cd "dist/${VERSION}"
+          rm -f SHA256SUMS
+          sha256sum axiom-* > SHA256SUMS
+          ls -la
+          cat SHA256SUMS
+
+      - name: upload build artifacts (workflow run, every trigger)
+        uses: actions/upload-artifact@v4
+        with:
+          name: axiom-${{ needs.build.outputs.version }}
+          path: dist/${{ needs.build.outputs.version }}/*
+          if-no-files-found: error
+          retention-days: 14
+
       - name: publish to GitHub Releases
-        if: steps.version.outputs.publish == 'true'
+        if: needs.build.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.value }}
         run: |
           notes_file="$(mktemp)"
           # Pull this version's own section out of CHANGELOG.md ("## [X.Y.Z] ..."
