@@ -4,8 +4,8 @@
 #     an RPM when `nfpm` + `envsubst` are available;
 #   - windows/amd64 (Windows Server 2022 / Windows 10+ Pro target), also
 #     packaged as an offline install bundle (zip + Install-Axiom.ps1) when
-#     `zip` is available, and as a double-clickable MSI (wrapping the same
-#     scripts, see packaging/windows/msi/Axiom.wxs) when `wix` is available.
+#     `zip` is available. The MSI is built separately by scripts/build-msi.sh
+#     (WiX is Windows-only); BUILD_MSI=1 runs it from here on a Windows host.
 # Missing packaging tools are skipped with a warning; the raw binaries are
 # always produced. Run from the repository root.
 #
@@ -77,7 +77,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
   -o "${OUT_DIR}/${WIN_NAME}" \
   ./cmd/axiom
 
-if command -v zip >/dev/null 2>&1 || command -v wix >/dev/null 2>&1; then
+if command -v zip >/dev/null 2>&1; then
   WIN_STAGE="$(mktemp -d)"
   cp "${OUT_DIR}/${WIN_NAME}" "${WIN_STAGE}/axiom.exe"
   cp packaging/windows/Install-Axiom.ps1 packaging/windows/Uninstall-Axiom.ps1 "${WIN_STAGE}/"
@@ -85,35 +85,17 @@ if command -v zip >/dev/null 2>&1 || command -v wix >/dev/null 2>&1; then
   cp configs/example-windows.yaml "${WIN_STAGE}/"
   mkdir -p "${WIN_STAGE}/capability-examples"
   cp scripts/examples/hello-world.ps1.sample "${WIN_STAGE}/capability-examples/"
-
-  if command -v zip >/dev/null 2>&1; then
-    echo "packaging the Windows install bundle (zip)..."
-    (cd "${WIN_STAGE}" && zip -q -r "${REPO_ROOT}/${OUT_DIR}/axiom-${VERSION}-windows-amd64.zip" .)
-  else
-    echo "WARNING: 'zip' not found — skipping the Windows zip bundle (raw .exe still built)."
-  fi
-
-  if command -v wix >/dev/null 2>&1; then
-    # MSI ProductVersion is limited to 3 numeric fields (no "v" prefix, no
-    # pre-release suffix): v1.2.0-rc1 -> 1.2.0
-    MSI_VERSION="$(echo "$RPM_VERSION" | sed -E 's/-.*$//')"
-    if [[ ! "$MSI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      MSI_VERSION="0.0.0"
-      echo "WARNING: VERSION=${VERSION} doesn't reduce to a plain X.Y.Z for the MSI; using ${MSI_VERSION}"
-    fi
-    echo "packaging the Windows MSI (version ${MSI_VERSION})..."
-    wix build packaging/windows/msi/Axiom.wxs \
-      -d "ProductVersion=${MSI_VERSION}" -d "StagingDir=${WIN_STAGE}" \
-      -arch x64 -o "${REPO_ROOT}/${OUT_DIR}/axiom-${VERSION}-windows-amd64.msi"
-  else
-    echo "WARNING: 'wix' not found — skipping the Windows MSI (zip/.exe still built)."
-    echo "  install: dotnet tool install --global wix --version 5.0.2"
-    echo "  (pin to v5 — v7+ requires accepting a paid Open Source Maintenance Fee EULA to build)"
-  fi
-
+  echo "packaging the Windows install bundle (zip)..."
+  (cd "${WIN_STAGE}" && zip -q -r "${REPO_ROOT}/${OUT_DIR}/axiom-${VERSION}-windows-amd64.zip" .)
   rm -rf "${WIN_STAGE}"
 else
-  echo "WARNING: neither 'zip' nor 'wix' found — skipping all Windows packaging (raw .exe still built)."
+  echo "WARNING: 'zip' not found — skipping the Windows zip bundle (raw .exe still built)."
+fi
+
+if [[ "${BUILD_MSI:-0}" == "1" ]]; then
+  bash scripts/build-msi.sh
+else
+  echo "NOTE: skipping the Windows MSI (WiX needs a Windows host); run scripts/build-msi.sh there, or set BUILD_MSI=1."
 fi
 
 echo "generating checksums..."
