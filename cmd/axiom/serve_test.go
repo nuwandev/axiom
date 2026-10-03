@@ -116,9 +116,13 @@ func TestServe_StartsAndShutsDownOnContextCancel(t *testing.T) {
 	}
 	url := "https://" + net.JoinHostPort(cfg.ListenAddress, strconv.Itoa(cfg.ListenPort)) + "/health"
 
+	// 400 * 50ms = 20s: generous margin for CheckPlatformPrerequisites's
+	// cold powershell.exe spawn (checking execution policy) on a loaded/
+	// first-use CI runner, observed to occasionally exceed the previous
+	// 5s budget on GitHub's hosted windows-latest image.
 	var lastErr error
 	served := false
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 400; i++ {
 		resp, err := hc.Get(url)
 		if err == nil {
 			b, _ := io.ReadAll(resp.Body)
@@ -134,8 +138,8 @@ func TestServe_StartsAndShutsDownOnContextCancel(t *testing.T) {
 	}
 	if !served {
 		cancel()
-		<-errc
-		t.Fatalf("serve did not answer an mTLS /health request: %v", lastErr)
+		serveErr := <-errc
+		t.Fatalf("serve did not answer an mTLS /health request: %v (serve itself returned: %v)", lastErr, serveErr)
 	}
 
 	cancel()

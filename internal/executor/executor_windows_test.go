@@ -24,7 +24,11 @@ func writePS(t *testing.T, body string) string {
 func run(t *testing.T, spec Spec) *Result {
 	t.Helper()
 	if spec.Timeout == 0 {
-		spec.Timeout = 20 * time.Second
+		// Generous margin for a cold powershell.exe spawn on a loaded/
+		// first-use CI runner (observed exceeding 20s on GitHub's hosted
+		// windows-latest image); a real production action's timeout is
+		// operator-configured per action and unaffected by this constant.
+		spec.Timeout = 60 * time.Second
 	}
 	if spec.MaxOutputBytes == 0 {
 		spec.MaxOutputBytes = 1 << 20
