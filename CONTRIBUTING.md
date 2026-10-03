@@ -47,25 +47,43 @@ means for this project.
 
 ## Cutting a release
 
+Pre-flight (do these before tagging; each has bitten a release before):
+
+- `main` CI is green on the exact commit you will tag, including the
+  `windows build, vet, test` job. Never merge a release PR before its CI
+  finishes.
+- If `.github/workflows/release.yml`, `scripts/build-release.sh` or
+  `scripts/build-msi.sh` changed, run the workflow manually (Actions >
+  Release > "Run workflow", version `v0.0.0-dryrun`) on that branch first and
+  confirm all three jobs pass.
+- README, the docs, `postman/`, the RPM description and the GitHub repo
+  description/topics describe every supported platform (Linux and Windows)
+  and carry no stale version numbers or "Linux only" wording.
+- No company names, hostnames, secrets or opinionated example actions:
+  `git grep -nIiE "backend-deploy|BEGIN .*PRIVATE KEY"` is empty and the
+  only shipped example action is `hello.world`.
+- Linux and Windows install paths stay at parity (installer, docs, example).
+
 1. Update [`CHANGELOG.md`](CHANGELOG.md) — move the pending notes under a new
-   `## [X.Y.Z] — <date>` heading. `.github/workflows/release.yml` uses this
-   section verbatim as the GitHub Release notes, so write it for that
-   audience.
+   `## [X.Y.Z] — <date>` heading (use the actual release date).
+   `.github/workflows/release.yml` uses this section verbatim as the GitHub
+   Release notes, so write it for that audience.
 2. Run `scripts/sync-doc-versions.sh vX.Y.Z` to repoint the copy-and-run
    install commands in `docs/INSTALL.md` at the new tag.
 3. Commit both as `Release vX.Y.Z`, then tag and push the tag:
    `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. That alone publishes the release: `.github/workflows/release.yml` builds
-   every artifact with `scripts/build-release.sh` (linux/amd64, linux/arm64
-   + RPMs, windows/amd64 + the offline install bundle) — refusing to run if
-   step 2 was skipped, same as a local build — and uploads them to a new
-   GitHub Release named after the tag. Watch the Actions run; nothing needs
-   attaching by hand.
-   - To exercise the pipeline without publishing (e.g. after changing
-     `scripts/build-release.sh` or the workflow itself), run it manually from
-     the Actions tab ("Run workflow") with a throwaway version like
-     `v0.0.0-dryrun` — this builds everything and uploads it as a workflow
-     run artifact instead of a GitHub Release.
+4. That alone publishes the release. `.github/workflows/release.yml` runs
+   three jobs: `build` (linux/amd64, linux/arm64 + RPMs, windows/amd64 exe
+   + offline zip bundle, via `scripts/build-release.sh`), `msi` (the Windows
+   MSI via `scripts/build-msi.sh` on a Windows runner — WiX is Windows-only),
+   and `publish` (regenerates `SHA256SUMS` over everything and creates the
+   GitHub Release). It refuses to run if step 2 was skipped. Watch the run.
+   - The dry run described above builds everything and uploads it as a
+     workflow run artifact instead of a GitHub Release.
+5. After it finishes, verify the Release page: all files present
+   (2 RPMs, 2 Linux binaries, Windows exe/zip/msi, `SHA256SUMS`), checksums
+   cover every file, notes are the CHANGELOG section. A green run alone is
+   not proof the release is correct.
 
 ## Reporting bugs
 
