@@ -6,7 +6,7 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
-## [1.2.0] — 2026-10-02
+## [1.2.0] — 2026-10-03
 
 ### Added
 - **Windows Server 2022 support.** A native Windows service (Service Control
