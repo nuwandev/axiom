@@ -57,17 +57,21 @@ func waitTerminal(t *testing.T, m *Manager, id string, d time.Duration) Snapshot
 	return Snapshot{}
 }
 
+// Action timeouts below (60s) are a generous test-infrastructure margin
+// for a cold powershell.exe spawn on a loaded/first-use CI runner (observed
+// exceeding 20s on GitHub's hosted windows-latest image) -- unrelated to
+// any real action's own, operator-configured timeout.
 func TestManager_Windows_TriggerSuccess(t *testing.T) {
 	dir := t.TempDir()
 	script := writePS(t, dir, "ok.ps1", "exit 0\r\n")
 	m := newWinTestManager(t, map[string]*config.Action{
-		"noop": {Name: "noop", Command: script, Timeout: 20 * time.Second, Concurrency: config.ConcurrencyShared},
+		"noop": {Name: "noop", Command: script, Timeout: 60 * time.Second, Concurrency: config.ConcurrencyShared},
 	})
 	job, err := m.Trigger(context.Background(), "noop", "ci", nil)
 	if err != nil {
 		t.Fatalf("Trigger: %v", err)
 	}
-	if snap := waitTerminal(t, m, job.ID, 25*time.Second); snap.Status != StatusSucceeded {
+	if snap := waitTerminal(t, m, job.ID, 90*time.Second); snap.Status != StatusSucceeded {
 		t.Errorf("status = %v, want succeeded", snap.Status)
 	}
 }
@@ -76,7 +80,7 @@ func TestManager_Windows_ParameterPatternRejectsInjection(t *testing.T) {
 	dir := t.TempDir()
 	script := writePS(t, dir, "deploy.ps1", "exit 0\r\n")
 	action := &config.Action{
-		Name: "deploy", Command: script, Timeout: 20 * time.Second,
+		Name: "deploy", Command: script, Timeout: 60 * time.Second,
 		Parameters: map[string]config.Parameter{
 			"image_tag": {Type: config.ParameterTypeString, Pattern: `^[a-zA-Z0-9._-]+$`, Required: true},
 		},
@@ -95,7 +99,7 @@ func TestManager_Windows_ParameterPatternRejectsInjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger with valid value: %v", err)
 	}
-	waitTerminal(t, m, job.ID, 25*time.Second)
+	waitTerminal(t, m, job.ID, 90*time.Second)
 }
 
 func TestManager_Windows_ValidatedParamReachesScriptAsInertEnv(t *testing.T) {
@@ -106,7 +110,7 @@ func TestManager_Windows_ValidatedParamReachesScriptAsInertEnv(t *testing.T) {
 		"Set-Content -Path '"+out+"' -Value $env:AXIOM_PARAM_NOTE\r\n")
 
 	action := &config.Action{
-		Name: "echo", Command: script, Timeout: 20 * time.Second,
+		Name: "echo", Command: script, Timeout: 60 * time.Second,
 		Parameters: map[string]config.Parameter{
 			// No pattern: prove the value is still inert even unvalidated.
 			"note": {Type: config.ParameterTypeString},
@@ -124,7 +128,7 @@ func TestManager_Windows_ValidatedParamReachesScriptAsInertEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger: %v", err)
 	}
-	waitTerminal(t, m, job.ID, 25*time.Second)
+	waitTerminal(t, m, job.ID, 90*time.Second)
 
 	if _, err := os.Stat(sentinel); err == nil {
 		t.Fatalf("hostile parameter value executed as PowerShell")
