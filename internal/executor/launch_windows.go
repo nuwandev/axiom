@@ -3,13 +3,14 @@
 package executor
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
+
+	"golang.org/x/sys/windows/registry"
 
 	"github.com/nuwandev/axiom/internal/winsec"
 )
@@ -85,10 +86,16 @@ func CheckPlatformPrerequisites() error {
 			prereqErr = fmt.Errorf("PowerShell interpreter integrity: %w", err)
 			return
 		}
-		prereqErr = checkExecutionPolicy(p)
+		prereqErr = checkExecutionPolicy()
 	})
 	return prereqErr
 }
+
+// gpoPolicyKey is where the "Turn on Script Execution" Group Policy setting
+// is stored, under HKLM for the machine scope and HKCU for the user scope.
+// These are the same values PowerShell's own MachinePolicy / UserPolicy
+// scopes read.
+const gpoPolicyKey = `SOFTWARE\Policies\Microsoft\Windows\PowerShell`
 
 // checkExecutionPolicy fails closed only if a real Group Policy
 // (MachinePolicy or UserPolicy scope) enforces an execution policy that
@@ -104,50 +111,31 @@ func CheckPlatformPrerequisites() error {
 // own machine's local policy just to make the product work is not
 // something this project does (see buildCommand's comment and
 // docs/windows-security.md for why that is safe to rely on).
-func checkExecutionPolicy(powerShellExe string) error {
-	// -ExecutionPolicy Bypass on THIS invocation too, deliberately: this is
-	// not the same as buildCommand's Bypass (that one is about letting a
-	// capability script run), it's needed here just to let PowerShell load
-	// the module Get-ExecutionPolicy itself lives in.
-	// VALIDATION-DISCOVERED: without it, this call failed on GitHub's
-	// hosted windows-latest CI runner with "CouldNotAutoloadMatchingModule"
-	// -- PowerShell's automatic module loading for
-	// Microsoft.PowerShell.Security (where Get-ExecutionPolicy is defined)
-	// is itself gated by the *local* execution policy when running
-	// non-interactively, and that runner's local policy is apparently
-	// Restricted by default (the same default this file's buildCommand
-	// comment already documents for Windows 10/11 Pro). A genuine
-	// bootstrapping problem: checking the policy requires loading a module
-	// that a restrictive policy blocks from autoloading. Bypass here fixes
-	// that without weakening the actual check -- Group Policy (this
-	// function's whole reason for existing) still overrides Bypass exactly
-	// as it always does, so a real GPO is still detected correctly; this
-	// only removes the *local*-policy-caused module-load failure, which was
-	// never the thing being checked for in the first place.
-	//
-	// Single-quoted separator ('|'), not double-quoted: avoids a second,
-	// unrelated layer of argument-escaping ambiguity between Go's Windows
-	// argv-to-command-line escaping and PowerShell's own tokenizer.
-	cmd := exec.Command(powerShellExe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
-		`(Get-ExecutionPolicy -Scope MachinePolicy).ToString() + '|' + (Get-ExecutionPolicy -Scope UserPolicy).ToString()`,
-	)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+//
+// The Group Policy registry values are read directly rather than by
+// spawning powershell.exe and calling Get-ExecutionPolicy.
+// VALIDATION-DISCOVERED: the spawned form failed on GitHub's hosted
+// windows-latest CI runner with "CouldNotAutoloadMatchingModule" for
+// Microsoft.PowerShell.Security (where Get-ExecutionPolicy lives), and the
+// failure persisted with -ExecutionPolicy Bypass, so it was not the local
+// policy gating the autoload. Reading the registry has no dependency on
+// PowerShell's module system at all, and also removes a cold powershell.exe
+// spawn from the startup path.
+func checkExecutionPolicy() error {
+	machine, err := gpoExecutionPolicy(registry.LOCAL_MACHINE, gpoPolicyKey)
 	if err != nil {
-		if stderr.Len() > 0 {
-			return fmt.Errorf("checking PowerShell execution policy: %w: %s", err, strings.TrimSpace(stderr.String()))
-		}
-		return fmt.Errorf("checking PowerShell execution policy: %w", err)
+		return fmt.Errorf("checking machine Group Policy for PowerShell execution policy: %w", err)
 	}
-	parts := strings.SplitN(strings.TrimSpace(string(out)), "|", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("checking PowerShell execution policy: unexpected output %q", string(out))
+	user, err := gpoExecutionPolicy(registry.CURRENT_USER, gpoPolicyKey)
+	if err != nil {
+		return fmt.Errorf("checking user Group Policy for PowerShell execution policy: %w", err)
 	}
-	machinePolicy, userPolicy := parts[0], parts[1]
-	gpo := machinePolicy
-	if gpo == "" || gpo == "Undefined" {
-		gpo = userPolicy
+
+	// Machine scope takes precedence over user scope, matching PowerShell's
+	// own resolution order.
+	gpo := machine
+	if gpo == "" {
+		gpo = user
 	}
 	if gpo == "Restricted" || gpo == "AllSigned" {
 		return fmt.Errorf(
@@ -158,4 +146,39 @@ func checkExecutionPolicy(powerShellExe string) error {
 				"Policy, or (if the policy is AllSigned) Authenticode-sign your capability scripts", gpo)
 	}
 	return nil
+}
+
+// gpoExecutionPolicy returns the execution policy a Group Policy sets under
+// root, or "" if none is set. "Turn on Script Execution" set to Disabled
+// writes EnableScripts=0, which blocks every script the same way Restricted
+// does, so it is reported as Restricted. A missing key or value means no
+// policy is set; any other registry error is returned rather than treated as
+// "no policy", so an unreadable policy fails closed instead of silently
+// passing.
+func gpoExecutionPolicy(root registry.Key, path string) (string, error) {
+	k, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	defer k.Close()
+
+	if enabled, _, err := k.GetIntegerValue("EnableScripts"); err == nil {
+		if enabled == 0 {
+			return "Restricted", nil
+		}
+	} else if !errors.Is(err, registry.ErrNotExist) {
+		return "", err
+	}
+
+	policy, _, err := k.GetStringValue("ExecutionPolicy")
+	if err != nil {
+		if errors.Is(err, registry.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	return policy, nil
 }
