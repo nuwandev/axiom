@@ -34,5 +34,4 @@ Thumbs.db
 # Private engineering artifacts — local source-of-truth only, never committed.
 # Do NOT delete these files; they stay on disk for development use.
 /docs/SPEC.md
-/CLAUDE.md
 /docs/decisions/
