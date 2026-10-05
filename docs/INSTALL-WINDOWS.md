@@ -218,15 +218,16 @@ For every `POST /v1/actions/{name}` that passes authentication,
 authorization and parameter validation, Axiom runs exactly:
 
 ```
-C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -File <configured .ps1>
+C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <configured .ps1>
 ```
 
-The interpreter path and the three switches are fixed in the binary. The
+The interpreter path and the five switches are fixed in the binary. The
 only variable is the `.ps1` path, which comes from `actions.<name>.command`
 in config and is integrity-checked at startup. `-Command` is never used; no
 request data reaches the command line; validated parameters arrive only as
 `AXIOM_PARAM_<NAME>` environment variables, exactly as on Linux.
-`-ExecutionPolicy` is not passed — Axiom neither sets nor depends on it (see
+`-ExecutionPolicy Bypass` is scoped to this one fixed invocation only — it
+does not call `Set-ExecutionPolicy` and persists nothing on the machine (see
 [`windows-security.md`](windows-security.md)).
 
 The capability process and everything it spawns are confined to a Windows
