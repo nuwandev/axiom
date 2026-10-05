@@ -77,7 +77,7 @@ jobs:
         run: VERSION=${{ steps.version.outputs.value }} bash scripts/build-release.sh
 
       - name: upload linux/windows artifacts for the MSI and publish jobs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-base
           path: dist/${{ steps.version.outputs.value }}/*
@@ -112,7 +112,7 @@ jobs:
         shell: bash
         run: bash scripts/build-msi.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist-msi
           path: dist/${{ needs.build.outputs.version }}/*.msi
@@ -149,7 +149,7 @@ jobs:
           cat SHA256SUMS
 
       - name: upload build artifacts (workflow run, every trigger)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: axiom-${{ needs.build.outputs.version }}
           path: dist/${{ needs.build.outputs.version }}/*
