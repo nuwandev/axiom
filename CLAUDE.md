@@ -35,6 +35,18 @@ checked (assets, `SHA256SUMS`, notes). Known past failures: merging before CI
 finished; WiX run on the Linux runner; windows-latest cold-start timeouts in
 tests.
 
+## Signing
+
+RPMs and the release `SHA256SUMS` are GPG-signed in CI using the
+`AXIOM_GPG_PRIVATE_KEY` repo secret (key ID `C6A4ECAEA8BDA887`, public key
+at `packaging/rpm/axiom-signing-public.asc`). Windows binaries/MSI are
+*not* Authenticode-signed — no free trusted-CA option exists; SignPath.io's
+free OSS program is the option to pursue if that's ever prioritized, since
+it needs an application/review, not something scriptable. Don't let a
+future release silently ship unsigned RPMs because the secret expired or
+got dropped — `docs/verifying-downloads.md` and the `build` job's
+"verify RPM signatures" step both call that out.
+
 ## Build and test
 
 ```

@@ -63,6 +63,13 @@ Pre-flight (do these before tagging; each has bitten a release before):
   `git grep -nIiE "backend-deploy|BEGIN .*PRIVATE KEY"` is empty and the
   only shipped example action is `hello.world`.
 - Linux and Windows install paths stay at parity (installer, docs, example).
+- No AI attribution anywhere (commits, PR/release text, docs, code
+  comments) — see the rule in `CLAUDE.md`.
+- RPM/checksum signing still works: the `AXIOM_GPG_PRIVATE_KEY` repo secret
+  is set and `verify RPM signatures` in the `build` job passes. See
+  [`docs/verifying-downloads.md`](docs/verifying-downloads.md). If that key
+  is ever rotated, update `GPG_KEY_ID` in `release.yml` and republish
+  `packaging/rpm/axiom-signing-public.asc` and the fingerprint in that doc.
 
 1. Update [`CHANGELOG.md`](CHANGELOG.md) — move the pending notes under a new
    `## [X.Y.Z] — <date>` heading (use the actual release date).

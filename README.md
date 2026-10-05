@@ -344,6 +344,15 @@ See
 [Releases](https://github.com/nuwandev/axiom/releases) for what's shipped
 and [CHANGELOG](CHANGELOG.md) for what changed.
 
+**Known gaps, stated plainly:**
+- The Windows `.exe`/`.msi` are not Authenticode-signed, so Windows
+  SmartScreen will warn on first run. RPMs and `SHA256SUMS` *are*
+  GPG-signed — see [docs/verifying-downloads.md](docs/verifying-downloads.md).
+- No third-party antivirus/EDR interoperability testing has been done.
+- The Docker/Kubernetes success path (an action that drives a container
+  runtime) is implemented but untested end-to-end.
+- Ubuntu/Debian are not yet in the validated matrix (RHEL-family only).
+
 ## Roadmap
 
 - Broader Linux distribution validation (Ubuntu/Debian) alongside the

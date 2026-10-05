@@ -165,6 +165,10 @@ downloaded — the step above isn't optional. Prefer this over 4a when you
 want to inspect exactly what runs before running it, or your policy
 doesn't allow installing packages outside a managed repository.
 
+`SHA256SUMS` and the RPMs are also GPG-signed — see
+[docs/verifying-downloads.md](verifying-downloads.md) if your policy
+requires signature verification, not just a checksum match.
+
 ### 4c. From a source checkout
 
 ```bash

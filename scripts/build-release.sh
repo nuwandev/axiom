@@ -44,6 +44,15 @@ elif ! command -v envsubst >/dev/null 2>&1; then
   BUILD_RPMS=0
 fi
 
+# RPM signing is optional: set GPG_KEY_FILE (path to an armored secret key)
+# and GPG_KEY_ID (its key ID) to sign; NFPM_RPM_PASSPHRASE too if that key
+# has a passphrase. See docs/verifying-downloads.md.
+if [[ -n "${GPG_KEY_FILE:-}" && -n "${GPG_KEY_ID:-}" ]]; then
+  echo "RPM signing: enabled (key ${GPG_KEY_ID})"
+else
+  echo "WARNING: GPG_KEY_FILE/GPG_KEY_ID not set — RPMs will be built unsigned."
+fi
+
 for GOARCH in amd64 arm64; do
   NAME="axiom-${VERSION}-linux-${GOARCH}"
   echo "building ${NAME}..."
@@ -57,7 +66,15 @@ for GOARCH in amd64 arm64; do
     echo "packaging ${NAME} as an RPM..."
     GENERATED_SPEC="$(mktemp)"
     VERSION="$RPM_VERSION" GOARCH="$GOARCH" BIN_PATH="${REPO_ROOT}/${OUT_DIR}/${NAME}" \
-      envsubst '${VERSION} ${GOARCH} ${BIN_PATH}' < packaging/rpm/nfpm.yaml.tmpl > "$GENERATED_SPEC"
+      GPG_KEY_FILE="${GPG_KEY_FILE:-}" GPG_KEY_ID="${GPG_KEY_ID:-}" \
+      envsubst '${VERSION} ${GOARCH} ${BIN_PATH} ${GPG_KEY_FILE} ${GPG_KEY_ID}' \
+      < packaging/rpm/nfpm.yaml.tmpl > "$GENERATED_SPEC"
+    if [[ -z "${GPG_KEY_FILE:-}" || -z "${GPG_KEY_ID:-}" ]]; then
+      # Strip the ===SIGNATURE=== block rather than hand nfpm an empty
+      # key_file (undefined behavior) -- see the marker comment in
+      # packaging/rpm/nfpm.yaml.tmpl.
+      sed -i '/# ===SIGNATURE===/,/# ===END SIGNATURE===/d' "$GENERATED_SPEC"
+    fi
     (cd packaging/rpm && "$NFPM_BIN" package --config "$GENERATED_SPEC" --target "${REPO_ROOT}/${OUT_DIR}/" --packager rpm)
     rm -f "$GENERATED_SPEC"
   fi

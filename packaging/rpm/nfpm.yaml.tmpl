@@ -7,6 +7,13 @@
 #   VERSION   e.g. 1.1.0  (no leading "v" — RPM version fields don't use one)
 #   GOARCH    amd64 | arm64
 #   BIN_PATH  path to the already-built linux/$GOARCH axiom binary
+#
+# Optional, for a signed RPM (skipped — with a warning — if unset; see
+# scripts/build-release.sh): GPG_KEY_FILE (armored secret key), GPG_KEY_ID.
+# The matching public key is packaging/rpm/axiom-signing-public.asc; see
+# docs/verifying-downloads.md for the fingerprint and import/verify steps.
+# If the key has a passphrase, nfpm reads it from $NFPM_RPM_PASSPHRASE
+# (not from this file — nfpm never accepts a passphrase in yaml).
 name: axiom
 arch: ${GOARCH}
 platform: linux
@@ -64,6 +71,14 @@ scripts:
 
 rpm:
   compression: gzip
+  # ===SIGNATURE=== -- scripts/build-release.sh strips this block entirely
+  # when GPG_KEY_FILE/GPG_KEY_ID aren't set, rather than passing nfpm an
+  # empty key_file (undefined behavior); keep this exact marker line and
+  # the two fields below it if you edit this block.
+  signature:
+    key_file: "${GPG_KEY_FILE}"
+    key_id: "${GPG_KEY_ID}"
+  # ===END SIGNATURE===
   scripts:
     # RPM-specific scriptlet semantics ($1 argument distinguishing
     # install/upgrade/removal) are used as-is in the scripts above --
