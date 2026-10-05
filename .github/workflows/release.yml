@@ -45,6 +45,10 @@ jobs:
       # actual secret key material is the AXIOM_GPG_PRIVATE_KEY repo secret;
       # see docs/verifying-downloads.md.
       GPG_KEY_ID: "C6A4ECAEA8BDA887"
+      # `if:` can't reference `secrets` directly (GitHub Actions rejects
+      # the expression) -- mirror it into env first, same workaround as
+      # the publish job below.
+      AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v7
 
@@ -53,9 +57,7 @@ jobs:
           go-version: "1.23.12"
 
       - name: import RPM signing key
-        if: ${{ secrets.AXIOM_GPG_PRIVATE_KEY != '' }}
-        env:
-          AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
+        if: ${{ env.AXIOM_GPG_PRIVATE_KEY != '' }}
         run: |
           echo "$AXIOM_GPG_PRIVATE_KEY" > /tmp/axiom-signing-private.asc
           echo "GPG_KEY_FILE=/tmp/axiom-signing-private.asc" >> "$GITHUB_ENV"
@@ -145,6 +147,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.build.outputs.version }}
+      # `if:` can't reference `secrets` directly -- see the build job.
+      AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v7
 
@@ -172,9 +176,7 @@ jobs:
       # published file's hash is in that one file, so one signature over it
       # verifies all of them. See docs/verifying-downloads.md.
       - name: sign checksums
-        if: ${{ secrets.AXIOM_GPG_PRIVATE_KEY != '' }}
-        env:
-          AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
+        if: ${{ env.AXIOM_GPG_PRIVATE_KEY != '' }}
         run: |
           echo "$AXIOM_GPG_PRIVATE_KEY" | gpg --batch --import
           cd "dist/${VERSION}"
