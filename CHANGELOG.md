@@ -6,6 +6,24 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [1.2.1] — 2026-10-05
+
+### Added
+- **Signed RPMs and checksums.** Release RPMs are now GPG-signed, and the
+  published `SHA256SUMS` has a detached signature (`SHA256SUMS.asc`), using
+  a dedicated release-signing key kept only in GitHub Actions. See
+  [docs/verifying-downloads.md](docs/verifying-downloads.md) for the
+  fingerprint and how to verify. No code changes — same binaries as 1.2.0.
+
+### Known gaps (unchanged, stated for clarity)
+- Windows `.exe`/`.msi` are still not Authenticode-signed: there is no free
+  option that removes the SmartScreen warning (a self-signed certificate
+  does not; SignPath Foundation's free OSS program does, but needs an
+  application/review this release isn't waiting on).
+- No third-party antivirus/EDR interoperability testing.
+- Docker/Kubernetes action success path is implemented but untested
+  end-to-end; Ubuntu/Debian are not yet in the validated matrix.
+
 ## [1.2.0] — 2026-10-03
 
 ### Added
