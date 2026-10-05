@@ -1,11 +1,12 @@
-# Axiom
+# Axiom: mTLS Server Automation Agent
 
-A secure server-side automation/action agent for Linux and Windows Server.
-Axiom exposes a small authenticated HTTPS API that lets a trusted system (a
-CI/CD controller, an internal automation tool) trigger predefined,
-server-local actions — deploy, rollback, restart, and whatever else you
-configure — without SSH access, and without Axiom itself knowing anything
-about what those actions actually do.
+Axiom is a secure server-side automation agent for Linux and Windows
+Server: a small, mutually-authenticated (mTLS) HTTPS API that lets a
+trusted system — a CI/CD controller, an internal automation tool — trigger
+predefined, server-local actions as a safer alternative to giving it SSH
+access. You configure what each action does — deploy, rollback, restart,
+or anything else — and Axiom itself knows nothing about what those actions
+actually do.
 
 [![CI](https://github.com/nuwandev/axiom/actions/workflows/ci.yml/badge.svg)](https://github.com/nuwandev/axiom/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
