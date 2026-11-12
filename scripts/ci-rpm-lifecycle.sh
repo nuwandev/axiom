@@ -65,7 +65,7 @@ else
   ok "systemd-analyze verify: unit is clean"
 fi
 
-echo "== configuration (v${BASELINE_VERSION} example config, unchanged apart from nothing)"
+echo "== configuration (the published v${BASELINE_VERSION} example config, unchanged)"
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj "/CN=ci-ca" \
   -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign" -keyout ca.key -out ca.crt 2>/dev/null
 issue() { # name cn eku
@@ -111,7 +111,7 @@ stop
 echo "== UPGRADE to the candidate RPM"
 rpm -Uvh candidate.rpm >/dev/null
 rpm -q axiom
-expect "config preserved across upgrade" "yes" "$(cmp -s baseline-config.yaml /etc/axiom/config.yaml && echo yes || echo no)"
+expect "config preserved across upgrade" "yes" "$([[ "$(sha256sum < baseline-config.yaml)" == "$(sha256sum < /etc/axiom/config.yaml)" ]] && echo yes || echo no)"
 expect "/opt/axiom/actions after upgrade" "root:axiom 750" "$(stat -c '%U:%G %a' /opt/axiom/actions)"
 expect "/var/log/axiom after upgrade"     "axiom:axiom 750" "$(stat -c '%U:%G %a' /var/log/axiom)"
 if start; then ok "candidate starts with the unchanged v${BASELINE_VERSION} config as user axiom"; flow && ok "hello.world end to end on the candidate" || bad "candidate flow"; else bad "candidate did not start: $(cat /tmp/axiom.out)"; fi
