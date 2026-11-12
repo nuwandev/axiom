@@ -88,7 +88,12 @@ type processContainment interface {
 
 // Result is the outcome of a completed (or killed) execution.
 type Result struct {
-	ExitCode        int
+	ExitCode int
+	// Signal names the signal that terminated the process when it died from
+	// one that Axiom did not send for a timeout or cancellation (for example
+	// systemd stopping the whole control group). Empty otherwise and on
+	// Windows.
+	Signal          string
 	Stdout          []byte
 	Stderr          []byte
 	StdoutTruncated bool
@@ -202,6 +207,7 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) {
 			result.ExitCode = exitErr.ExitCode()
+			result.Signal = exitSignal(exitErr.ProcessState)
 			return result, nil
 		}
 		return result, fmt.Errorf("waiting for process: %w", runErr)

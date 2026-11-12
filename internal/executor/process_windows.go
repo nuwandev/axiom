@@ -4,6 +4,7 @@ package executor
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -146,3 +147,6 @@ func (w *windowsContainment) release() {
 		w.job = 0
 	}
 }
+
+// exitSignal: Windows has no signal-terminated processes.
+func exitSignal(*os.ProcessState) string { return "" }

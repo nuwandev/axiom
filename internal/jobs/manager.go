@@ -323,6 +323,22 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	}
 }
 
+func (m *Manager) isStopping() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.stopping
+}
+
+// BeginShutdown stops accepting new jobs. Call it as soon as a stop is
+// requested, before the slower HTTP drain, so a job that dies from the
+// stop's own signals is attributed to the shutdown. Shutdown (which also
+// cancels and waits) may follow.
+func (m *Manager) BeginShutdown() {
+	m.mu.Lock()
+	m.stopping = true
+	m.mu.Unlock()
+}
+
 // finishWithoutRunning records a terminal state for a job whose script was
 // never executed.
 func (m *Manager) finishWithoutRunning(job *Job, status Status, reason string) {
@@ -466,6 +482,15 @@ func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, job *Job, 
 		status = StatusFailed
 		ec := result.ExitCode
 		exitCode = &ec
+		if result.Signal != "" {
+			// Killed from outside Axiom's own timeout/cancel path, e.g. systemd
+			// signalling the whole control group at the same moment it stops
+			// Axiom. Say so in the audit record instead of a bare failure.
+			errMsg = "terminated by signal: " + result.Signal
+			if m.isStopping() {
+				errMsg = interruptedReason + " (" + errMsg + ")"
+			}
+		}
 	}
 
 	if result != nil {

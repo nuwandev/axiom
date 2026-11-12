@@ -307,3 +307,16 @@ func TestRun_TimeoutReturnsEvenIfDetachedDescendantHoldsPipe(t *testing.T) {
 		t.Fatal("Run did not return: a detached descendant holding the stdout pipe blocks it indefinitely")
 	}
 }
+
+// A process killed by a signal Axiom did not send (systemd stopping the whole
+// control group, an operator's kill) reports which signal it was.
+func TestRun_ReportsSignalThatKilledTheProcess(t *testing.T) {
+	script := writeScript(t, "kill -TERM $$\n")
+	res, err := Run(context.Background(), Spec{Command: script, Timeout: 5 * time.Second, MaxOutputBytes: 1024})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Signal != "terminated" || res.TimedOut || res.Cancelled {
+		t.Errorf("Signal=%q TimedOut=%v Cancelled=%v, want signal \"terminated\"", res.Signal, res.TimedOut, res.Cancelled)
+	}
+}

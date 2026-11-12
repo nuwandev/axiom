@@ -3,9 +3,21 @@
 package executor
 
 import (
+	"os"
 	"os/exec"
 	"syscall"
 )
+
+// exitSignal returns the name of the signal that killed the process, or "".
+func exitSignal(ps *os.ProcessState) string {
+	if ps == nil {
+		return ""
+	}
+	if ws, ok := ps.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return ws.Signal().String()
+	}
+	return ""
+}
 
 // unixContainment places the child in its own process group so the whole
 // tree it spawns can be signalled as a unit, and arranges for the kernel to
