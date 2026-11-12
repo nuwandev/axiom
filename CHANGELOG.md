@@ -6,7 +6,7 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
-## [2.0.0] — unreleased (set the release date when tagging)
+## [2.0.0] — 2026-11-12
 
 Major release: the config schema and the authentication behaviour change in
 ways that can break existing deployments. Read "Breaking changes" first.
@@ -98,6 +98,18 @@ ways that can break existing deployments. Read "Breaking changes" first.
   the unanchored-pattern footgun described above. See
   `docs/THREAT-MODEL.md`, "Audit trail integrity", for what the local audit
   file does and does not guarantee.
+
+### Known limitations (unchanged by this release, stated plainly)
+- No certificate revocation (no CRL/OCSP): a stolen client certificate works
+  until it expires or its identity is removed from the config and Axiom is
+  restarted. See `docs/certificates.md`.
+- The local audit file is writable by the account that runs actions and the
+  syslog hand-off is not authenticated; delivery to a central collector has
+  not been validated on a real host (`docs/audit-validation.md`).
+- Windows keeps the local audit file only (no syslog sink) and has no file
+  ownership check; Windows binaries and the MSI are not Authenticode-signed.
+- A configured action script runs as the service account; Docker access for
+  that account is root-equivalent.
 
 ## [1.2.1] — 2026-10-05
 
