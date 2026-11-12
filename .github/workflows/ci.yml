@@ -159,15 +159,22 @@ jobs:
       - name: package it as an RPM
         run: |
           GENERATED_SPEC="$(mktemp)"
-          VERSION=0.0.0-ci GOARCH=amd64 BIN_PATH=/tmp/axiom-smoke-test \
+          VERSION=2.0.0-ci GOARCH=amd64 BIN_PATH=/tmp/axiom-smoke-test \
             envsubst '${VERSION} ${GOARCH} ${BIN_PATH}' < packaging/rpm/nfpm.yaml.tmpl > "$GENERATED_SPEC"
           cd packaging/rpm
           nfpm package --config "$GENERATED_SPEC" --target /tmp/ --packager rpm
 
       - name: sanity-check the package contents
         run: |
-          rpm -qlp /tmp/axiom-0.0.0~ci-1.x86_64.rpm > /tmp/rpm-contents.txt
+          rpm -qlp /tmp/axiom-2.0.0~ci-1.x86_64.rpm > /tmp/rpm-contents.txt
           grep -qx '/usr/local/bin/axiom' /tmp/rpm-contents.txt
           grep -qx '/etc/systemd/system/axiom.service' /tmp/rpm-contents.txt
           echo "RPM contents look correct:"
           cat /tmp/rpm-contents.txt
+
+      # Real RHEL-family check of the RPM scriptlets and of upgrade/rollback
+      # against the published v1.2.1 RPM (Rocky Linux 9 container, mTLS,
+      # hello.world, strict ownership). systemd is not started in a
+      # container, so unit start-up is not covered here.
+      - name: install, upgrade and roll back in a Rocky Linux 9 container
+        run: bash scripts/ci-rpm-lifecycle.sh /tmp/axiom-2.0.0~ci-1.x86_64.rpm
