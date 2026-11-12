@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Go 1.23+. Linux (or other unix) is the primary development host. The whole
+Go 1.27.4+. Linux (or other unix) is the primary development host. The whole
 tree also builds for `GOOS=windows` — the Windows-specific process
 execution, Job Object containment, NTFS ACL checks and Service Control
 Manager adapter live behind `//go:build windows` files

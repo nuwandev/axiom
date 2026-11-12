@@ -4,6 +4,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -300,5 +301,149 @@ func TestManager_MaxOutputBytesFromConfigIsHonored(t *testing.T) {
 	}
 	if !stdoutTrunc {
 		t.Errorf("expected stdout to be marked truncated")
+	}
+}
+
+type failingAuditSink struct{}
+
+func (failingAuditSink) WriteRecord([]byte) error { return errors.New("collector unreachable") }
+func (failingAuditSink) Close() error             { return nil }
+
+// An action must never run unaudited: if the accept record cannot be
+// delivered (here, the forwarding sink is down) Trigger refuses, releases the
+// exclusive lock, and leaves no job behind.
+func TestManager_AuditWriteFailureRefusesToRunAction(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	script := writeScript(t, dir, "mark.sh", "touch "+marker+"\n")
+
+	al, err := audit.Open(filepath.Join(dir, "audit.log"), "test-agent", failingAuditSink{})
+	if err != nil {
+		t.Fatalf("audit.Open: %v", err)
+	}
+	t.Cleanup(func() { al.Close() })
+	cfg := &config.Config{
+		AgentID: "test-agent",
+		Actions: map[string]*config.Action{
+			"deploy": {Name: "deploy", Command: script, Timeout: 5 * time.Second, Concurrency: config.ConcurrencyExclusive},
+		},
+	}
+	m := NewManager(cfg, al, testLogger(t))
+
+	for i := 0; i < 2; i++ {
+		// The second attempt proves the exclusive lock was released on failure.
+		if _, err := m.Trigger(context.Background(), "deploy", "ci-jenkins", nil); err == nil || errors.Is(err, ErrActionBusy) {
+			t.Fatalf("attempt %d: Trigger error = %v, want an audit-unavailable error", i, err)
+		}
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatalf("the action script ran although its accept record could not be audited")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.jobs) != 0 {
+		t.Errorf("%d job(s) left in the store after a refused trigger", len(m.jobs))
+	}
+}
+
+func TestManager_CancellationMarksJobCancelled(t *testing.T) {
+	dir := t.TempDir()
+	script := writeScript(t, dir, "hang.sh", "sleep 30\n")
+	m := newTestManager(t, map[string]*config.Action{
+		"deploy": {Name: "deploy", Command: script, Timeout: 30 * time.Second, Concurrency: config.ConcurrencyExclusive},
+	})
+
+	job, err := m.Trigger(context.Background(), "deploy", "ci-jenkins", nil)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	job.Cancel()
+
+	snap := waitForTerminal(t, m, job.ID, 10*time.Second)
+	if snap.Status != StatusCancelled {
+		t.Errorf("Status = %v, want cancelled", snap.Status)
+	}
+
+	// Cancellation must release the exclusive lock.
+	next, err := m.Trigger(context.Background(), "deploy", "ci-jenkins", nil)
+	if err != nil {
+		t.Fatalf("Trigger after cancellation: %v", err)
+	}
+	next.Cancel()
+	waitForTerminal(t, m, next.ID, 10*time.Second)
+}
+
+func TestManager_ExclusiveLockReleasedAfterTimeout(t *testing.T) {
+	dir := t.TempDir()
+	script := writeScript(t, dir, "hang.sh", "sleep 30\n")
+	m := newTestManager(t, map[string]*config.Action{
+		"deploy": {Name: "deploy", Command: script, Timeout: 200 * time.Millisecond, Concurrency: config.ConcurrencyExclusive},
+	})
+
+	first, err := m.Trigger(context.Background(), "deploy", "ci-jenkins", nil)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	waitForTerminal(t, m, first.ID, 10*time.Second)
+
+	second, err := m.Trigger(context.Background(), "deploy", "ci-jenkins", nil)
+	if err != nil {
+		t.Fatalf("Trigger after timeout: %v (lock not released)", err)
+	}
+	waitForTerminal(t, m, second.ID, 10*time.Second)
+}
+
+func TestManager_BusyRejectionCreatesNoJob(t *testing.T) {
+	dir := t.TempDir()
+	script := writeScript(t, dir, "slow.sh", "sleep 1\n")
+	m := newTestManager(t, map[string]*config.Action{
+		"deploy": {Name: "deploy", Command: script, Timeout: 5 * time.Second, Concurrency: config.ConcurrencyExclusive},
+	})
+	first, err := m.Trigger(context.Background(), "deploy", "ci-jenkins", nil)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	m.mu.Lock()
+	before := len(m.jobs)
+	m.mu.Unlock()
+	if _, err := m.Trigger(context.Background(), "deploy", "someone-else", nil); err != ErrActionBusy {
+		t.Fatalf("Trigger = %v, want ErrActionBusy", err)
+	}
+	m.mu.Lock()
+	after := len(m.jobs)
+	m.mu.Unlock()
+	if after != before {
+		t.Errorf("a rejected trigger left %d new job(s) behind", after-before)
+	}
+	waitForTerminal(t, m, first.ID, 5*time.Second)
+}
+
+// Job state is memory-only: a restarted agent (a new Manager) knows no job
+// IDs, so nothing from before the restart can be read, and ownership cannot be
+// reconstructed or bypassed.
+func TestManager_RestartForgetsAllJobs(t *testing.T) {
+	dir := t.TempDir()
+	script := writeScript(t, dir, "ok.sh", "echo secret-output\n")
+	actions := map[string]*config.Action{
+		"deploy": {Name: "deploy", Command: script, Timeout: 5 * time.Second},
+	}
+	before := newTestManager(t, actions)
+	job, err := before.Trigger(context.Background(), "deploy", "ci-jenkins", nil)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	waitForTerminal(t, before, job.ID, 5*time.Second)
+
+	after := newTestManager(t, actions)
+	if _, ok := after.Get(job.ID); ok {
+		t.Errorf("a restarted manager still knows job %s", job.ID)
+	}
+	if _, _, _, _, ok := after.Logs(job.ID); ok {
+		t.Errorf("a restarted manager still serves logs for job %s", job.ID)
 	}
 }

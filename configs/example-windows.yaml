@@ -33,6 +33,8 @@ output:
   max_bytes: 2097152   # 2 MiB cap on captured stdout/stderr, per stream, per job
 
 jobs:
+  max_concurrent: 16   # agent-wide cap on queued+running jobs (all actions);
+                       # over the cap a trigger gets 429 and creates no job.
   max_history: 1000    # in-memory job count kept for GET /v1/jobs/{id}; not durable.
                         # The audit log is the durable execution record.
 

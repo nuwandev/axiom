@@ -14,8 +14,8 @@
 # docs/getting-started.md.
 #
 # Install this at the exact path referenced by `command:`, owned by root
-# (or the account Axiom runs as) with mode 0750 (no group/world write) --
-# Axiom refuses to start if that isn't true. This one is harmless, but
+# (group `axiom`) with mode 0750 (no group/world write) -- Axiom refuses to
+# start if that isn't true, including if the `axiom` account owns it. This one is harmless, but
 # Axiom does not and should not treat it as a special case.
 set -euo pipefail
 

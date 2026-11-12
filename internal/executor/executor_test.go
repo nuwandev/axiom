@@ -282,3 +282,28 @@ func processAlive(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil
 }
+
+// A descendant that leaves the action's process group (setsid) and keeps the
+// stdout pipe open must not leave Run blocked forever: that would pin the job
+// as "running" and hold the action's exclusive lock until the agent restarts.
+func TestRun_TimeoutReturnsEvenIfDetachedDescendantHoldsPipe(t *testing.T) {
+	if _, err := exec.LookPath("setsid"); err != nil {
+		t.Skip("setsid not available")
+	}
+	script := writeScript(t, "setsid sleep 30 &\nsleep 30\n")
+
+	done := make(chan *Result, 1)
+	go func() {
+		res, _ := Run(context.Background(), Spec{Command: script, Timeout: time.Second, MaxOutputBytes: 1024})
+		done <- res
+	}()
+
+	select {
+	case res := <-done:
+		if res == nil || !res.TimedOut {
+			t.Fatalf("result = %+v, want TimedOut", res)
+		}
+	case <-time.After(TerminationGracePeriod + 10*time.Second):
+		t.Fatal("Run did not return: a detached descendant holding the stdout pipe blocks it indefinitely")
+	}
+}

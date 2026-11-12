@@ -9,17 +9,20 @@ on:
 permissions:
   contents: read
 
+env:
+  # Fail on a toolchain mismatch with go.mod instead of silently downloading one.
+  GOTOOLCHAIN: local
+
 jobs:
   build-test:
     name: build, vet, test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.23"
-          check-latest: true
+          go-version: "1.27.4"
 
       - name: gofmt
         run: |
@@ -44,6 +47,11 @@ jobs:
 
       - name: go test -race
         run: go test ./... -race
+
+      - name: govulncheck
+        # Reports only vulnerabilities in code this binary can actually reach,
+        # against the exact Go toolchain and modules in use. Version pinned.
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
       - name: windows cross-compile
         # The Windows platform code (service adapter, PowerShell executor, Job
@@ -70,12 +78,11 @@ jobs:
     name: windows build, vet, test
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.23"
-          check-latest: true
+          go-version: "1.27.4"
 
       - name: go build
         run: go build ./...
@@ -115,23 +122,31 @@ jobs:
       # Pinned, not "latest": nfpm's own go.mod can require a newer Go
       # toolchain than this project targets (hit exactly that with
       # `go install nfpm@latest` — it started requiring Go 1.26 while this
-      # project stays on 1.23 to match go.mod). Downloading the prebuilt
+      # project stays on 1.27 to match go.mod). Downloading the prebuilt
       # binary release sidesteps that entirely: it doesn't matter what Go
       # version compiled nfpm itself, only what compiled Axiom. Bump this
       # deliberately when there's a reason to, not automatically.
       NFPM_VERSION: "2.47.0"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.23"
-          check-latest: true
+          go-version: "1.27.4"
 
       - name: install nfpm (prebuilt binary) and rpm inspection tools
         run: |
-          curl -sL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
-            | tar -xz -C /usr/local/bin nfpm
+          curl -fsSL -o /tmp/nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          # Integrity pin only: this digest was copied from the release's own
+          # checksums.txt, so it detects a later substitution of the archive
+          # but does NOT independently authenticate it. Independent options:
+          # cosign verify-blob of checksums.txt against the release's
+          # checksums.txt.sigstore.json, or build nfpm from source with
+          # `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0`
+          # (module hashes are checked against sum.golang.org). Update this
+          # digest together with NFPM_VERSION.
+          echo "0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783  /tmp/nfpm.tar.gz" | sha256sum -c -
+          tar -xz -C /usr/local/bin -f /tmp/nfpm.tar.gz nfpm
           chmod +x /usr/local/bin/nfpm
           nfpm --version
           sudo apt-get update
@@ -144,15 +159,22 @@ jobs:
       - name: package it as an RPM
         run: |
           GENERATED_SPEC="$(mktemp)"
-          VERSION=0.0.0-ci GOARCH=amd64 BIN_PATH=/tmp/axiom-smoke-test \
+          VERSION=2.0.0-ci GOARCH=amd64 BIN_PATH=/tmp/axiom-smoke-test \
             envsubst '${VERSION} ${GOARCH} ${BIN_PATH}' < packaging/rpm/nfpm.yaml.tmpl > "$GENERATED_SPEC"
           cd packaging/rpm
           nfpm package --config "$GENERATED_SPEC" --target /tmp/ --packager rpm
 
       - name: sanity-check the package contents
         run: |
-          rpm -qlp /tmp/axiom-0.0.0~ci-1.x86_64.rpm > /tmp/rpm-contents.txt
+          rpm -qlp /tmp/axiom-2.0.0~ci-1.x86_64.rpm > /tmp/rpm-contents.txt
           grep -qx '/usr/local/bin/axiom' /tmp/rpm-contents.txt
           grep -qx '/etc/systemd/system/axiom.service' /tmp/rpm-contents.txt
           echo "RPM contents look correct:"
           cat /tmp/rpm-contents.txt
+
+      # Real RHEL-family check of the RPM scriptlets and of upgrade/rollback
+      # against the published v1.2.1 RPM (Rocky Linux 9 container, mTLS,
+      # hello.world, strict ownership). systemd is not started in a
+      # container, so unit start-up is not covered here.
+      - name: install, upgrade and roll back in a Rocky Linux 9 container
+        run: bash scripts/ci-rpm-lifecycle.sh /tmp/axiom-2.0.0~ci-1.x86_64.rpm

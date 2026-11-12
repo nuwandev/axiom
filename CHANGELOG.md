@@ -6,6 +6,111 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [2.0.0] — 2026-11-12
+
+Major release: the config schema and the authentication behaviour change in
+ways that can break existing deployments. Read "Breaking changes" first.
+
+### Breaking changes
+- **Every declared action parameter must now have a `pattern`.** A config
+  that declares a parameter without one fails to load. Add a pattern (for
+  example `'^[a-zA-Z0-9._-]{1,128}$'`).
+- **Patterns match the whole value.** They are compiled as `^(?:pattern)$`,
+  so a pattern that only matched part of a value before (`[a-z]+` accepting
+  `abc; ls`) now rejects it.
+- **Client certificate required at the TLS handshake.** Unless
+  `security.health.allow_anonymous` is true, a client without a certificate
+  signed by the configured CA now fails the TLS handshake instead of
+  receiving an HTTP `401`. Monitoring that probed `/health` without a
+  certificate must present one or opt in to anonymous health.
+- **Job status and logs are owner-only.** `GET /v1/jobs/{id}` and `/logs`
+  return `404` unless the caller's certificate identity is the one that
+  triggered the job. Previously any certificate signed by the CA could read
+  any job whose ID it knew.
+- **Build toolchain is Go 1.27.4** (was 1.23). Building from source needs Go
+  1.27.4 or newer.
+- **Security-relevant files must be root-owned.** The config file, CA,
+  server certificate, server key and action scripts (and their parent
+  directories) must be owned by root; previously files owned by the service
+  account were also accepted, which let that account (or a compromised
+  action) rewrite them. The documented layout (`root:axiom`, as the RPM and
+  installer create it) already complies. A deployment that kept scripts
+  owned by `axiom` must `chown root:axiom` them. For development only,
+  `security.allow_service_owned_files: true` restores the old behaviour.
+  The audit log directory stays service-owned by design.
+- **The server private key must not be accessible to other users** (mode at
+  most `0640`) and no trusted file may be group- or world-writable.
+- **A global cap of 16 queued+running jobs (`jobs.max_concurrent`)** applies
+  across all actions. A trigger over the cap returns `429` (with
+  `Retry-After`) and creates no job. Raise it if you legitimately run more
+  than 16 jobs at once.
+- **A job whose `started` audit record cannot be written is not run**
+  (previously only logged). It ends `failed` with reason `audit log
+  unavailable; action not started`.
+- **Request bodies must be exactly one JSON object**; trailing data is a
+  `400`, and `400` bodies no longer include the JSON parser's error text.
+
+### Added
+- **`audit.syslog: true` (Linux).** Every audit record is also emitted to
+  journald/syslog as one structured JSON message (facility AUTH, identifier
+  `axiom-audit`). Axiom refuses to start if the syslog socket is
+  unavailable and refuses to run an action whose accept record cannot be
+  delivered. Forward this stream to a central collector: the local audit
+  file is owned by the account that runs actions and is not tamper-resistant.
+  Not available on Windows (setting it there is a config error).
+
+### Release pipeline
+- A real release (`vX.Y.Z` tag) now **fails** if the GPG signing key is not
+  available instead of publishing unsigned artifacts. Signing and
+  verification moved to the `publish` job (`scripts/sign-release.sh`); the
+  `build` job that compiles code no longer receives the key. RPM signatures
+  and `SHA256SUMS.asc` are verified against the public key committed in the
+  repository before anything is uploaded.
+- Workflow `permissions` are read-only by default; only the `publish` job
+  can write. This pipeline has not yet run end to end in CI (see the
+  release checklist: run the `workflow_dispatch` dry run first).
+
+### Added (runtime)
+- `jobs.max_concurrent` (default 16, range 1-1024).
+- Graceful shutdown stops running jobs (process groups included), writes a
+  `finished` record with reason `interrupted: agent shutting down`, and
+  refuses new jobs (`503`). A crash, `SIGKILL` or power loss still leaves
+  jobs with `accepted`/`started` records and no `finished` record, and a
+  collector outage can still lose forwarded records; neither the local file
+  nor the syslog hand-off is tamper-proof.
+
+### Security
+- Audit records: the redaction list now also covers `pass`, `pwd`, `auth`,
+  `bearer`, `cookie`, `session`, `private`, `cert`, `signature` and `jwt`
+  parameter names, and free-text fields are capped at 512 bytes.
+- Release workflow: the manual-dispatch version input is passed through the
+  environment and validated instead of being interpolated into a shell
+  script.
+- CI and release use the exact Go 1.27.4 toolchain (no floating version, CI
+  sets `GOTOOLCHAIN=local`).
+- Executor: after a timeout or cancellation, waiting for the action's output
+  pipes is now bounded. Previously a descendant that left the process group
+  (`setsid`) and kept stdout open could leave the job `running` and its
+  `exclusive` lock held until the agent restarted.
+- New [`docs/audit-validation.md`](docs/audit-validation.md): procedure for
+  validating the journald/collector path on a real host.
+- Closes the job-visibility gap, the unauthenticated pre-HTTP surface and
+  the unanchored-pattern footgun described above. See
+  `docs/THREAT-MODEL.md`, "Audit trail integrity", for what the local audit
+  file does and does not guarantee.
+
+### Known limitations (unchanged by this release, stated plainly)
+- No certificate revocation (no CRL/OCSP): a stolen client certificate works
+  until it expires or its identity is removed from the config and Axiom is
+  restarted. See `docs/certificates.md`.
+- The local audit file is writable by the account that runs actions and the
+  syslog hand-off is not authenticated; delivery to a central collector has
+  not been validated on a real host (`docs/audit-validation.md`).
+- Windows keeps the local audit file only (no syslog sink) and has no file
+  ownership check; Windows binaries and the MSI are not Authenticode-signed.
+- A configured action script runs as the service account; Docker access for
+  that account is root-equivalent.
+
 ## [1.2.1] — 2026-10-05
 
 ### Added

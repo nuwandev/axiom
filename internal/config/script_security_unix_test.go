@@ -5,6 +5,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,7 +69,92 @@ func TestCheckScriptSecurity_RejectsSymlink(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	if err := checkScriptSecurity(symlinkPath); err == nil {
+	if err := checkScriptSecurity(symlinkPath, true); err == nil {
 		t.Fatalf("expected checkScriptSecurity to reject a symlink, got nil error")
 	}
+}
+
+// Production default: a script owned by the account Axiom runs as is refused,
+// because that account (or a compromised action running as it) could rewrite
+// it. Root ownership is the supported layout.
+func TestCheckScriptSecurity_ServiceOwnedRejectedByDefault(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a root-owned file is always acceptable; run as a non-root user")
+	}
+	script := writeFixture(t, t.TempDir(), "a.sh", "#!/bin/sh\n", 0o750)
+
+	err := checkScriptSecurity(script, false)
+	if err == nil || !strings.Contains(err.Error(), "service account") {
+		t.Fatalf("checkScriptSecurity(service-owned, strict) = %v, want a service-account ownership error", err)
+	}
+	if err := checkScriptSecurity(script, true); err != nil {
+		t.Fatalf("checkScriptSecurity with the development opt-in = %v, want nil", err)
+	}
+}
+
+func TestRequireSecureParentDir_ServiceOwnedDirectoryRejectedByDefault(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("run as a non-root user")
+	}
+	dir := t.TempDir() // owned by the test user, not sticky
+	target := filepath.Join(dir, "x")
+
+	if err := requireSecureParentDir(target, false); err == nil {
+		t.Fatal("a service-owned parent directory was accepted in strict mode")
+	}
+	if err := requireSecureParentDir(target, true); err != nil {
+		t.Fatalf("with the development opt-in: %v", err)
+	}
+}
+
+func TestRequireTrustedFile(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct {
+		name    string
+		mode    os.FileMode
+		private bool
+		wantErr string // substring; empty = accepted (with the dev opt-in)
+	}{
+		{"private key 0600", 0o600, true, ""},
+		{"private key 0640 (documented root:axiom layout)", 0o640, true, ""},
+		{"private key 0644 readable by everyone", 0o644, true, "accessible by other users"},
+		{"private key 0604 other-readable", 0o604, true, "accessible by other users"},
+		{"private key 0660 group-writable", 0o660, true, "writable"},
+		{"certificate 0644", 0o644, false, ""},
+		{"certificate 0664 group-writable", 0o664, false, "writable"},
+		{"certificate 0646 world-writable", 0o646, false, "writable"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := writeFixture(t, dir, strings.ReplaceAll(tc.name, " ", "_"), "x", tc.mode)
+			err := requireTrustedFile(p, tc.private, true)
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+				t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
+			}
+		})
+	}
+
+	t.Run("symlink rejected", func(t *testing.T) {
+		real := writeFixture(t, dir, "real.key", "x", 0o600)
+		link := filepath.Join(dir, "link.key")
+		if err := os.Symlink(real, link); err != nil {
+			t.Fatal(err)
+		}
+		if err := requireTrustedFile(link, true, true); err == nil {
+			t.Fatal("a symlinked key was accepted")
+		}
+	})
+
+	t.Run("service-owned rejected in strict mode", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("run as a non-root user")
+		}
+		p := writeFixture(t, dir, "owned.crt", "x", 0o644)
+		if err := requireTrustedFile(p, false, false); err == nil {
+			t.Fatal("a service-owned file was accepted in strict mode")
+		}
+	})
 }

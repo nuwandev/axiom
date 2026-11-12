@@ -27,10 +27,25 @@ could be toggled.
   variables. Timeouts kill the full process tree, not just the direct
   child. The agent itself runs as a dedicated, unprivileged account inside
   a hardened systemd sandbox and cannot modify its own binary, config,
-  certificates, or action scripts.
+  certificates, or action scripts. At startup Axiom enforces this layout:
+  config, CA, server certificate/key and scripts must be root-owned and
+  not group/world-writable (the key not accessible by others), and no
+  ancestor directory may be writable by another user. Concurrency is
+  capped (`jobs.max_concurrent`).
 - **Audit**: every accepted, started, finished, and rejected request is
-  written synchronously to an append-only log, with values that look like
-  secrets redacted.
+  written synchronously to a local log and, with `audit.syslog: true`, also
+  emitted to journald/syslog, with values that look like secrets redacted.
+  The local file is owned by the account that runs actions and is not
+  tamper-resistant; the central collector you forward syslog to is the
+  authoritative record (see `THREAT-MODEL.md`, "Audit trail integrity"):
+
+  > **Local audit file: operational copy only.**
+  > **Central collector: authoritative audit record.**
+
+  The forwarded sink is Linux-only; the Windows build keeps the local file
+  alone and is not suitable where forwarded audit evidence is required.
+- **Job visibility**: a job's status and logs are readable only by the
+  identity that triggered it.
 
 ## What Axiom does not protect against
 

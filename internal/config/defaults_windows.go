@@ -17,3 +17,7 @@ func defaultAuditLogPath() string {
 	}
 	return filepath.Join(pd, "Axiom", "logs", "audit.log")
 }
+
+// syslogSupported reports whether audit.syslog can be honoured on this
+// platform. Windows has no syslog/journald equivalent wired up yet.
+const syslogSupported = false

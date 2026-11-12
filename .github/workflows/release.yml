@@ -26,8 +26,11 @@ on:
         required: true
         default: "v0.0.0-dryrun"
 
+# Least privilege: every job is read-only unless it declares more. Only the
+# publish job needs write access (the GitHub Release and attestations), and
+# only the publish job ever receives the signing key.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -41,42 +44,52 @@ jobs:
       # with, independent of whatever the runner image defaults to.
       GOTOOLCHAIN: local
       NFPM_VERSION: "2.47.0"
-      # Public info -- matches packaging/rpm/axiom-signing-public.asc. The
-      # actual secret key material is the AXIOM_GPG_PRIVATE_KEY repo secret;
-      # see docs/verifying-downloads.md.
-      GPG_KEY_ID: "C6A4ECAEA8BDA887"
-      # `if:` can't reference `secrets` directly (GitHub Actions rejects
-      # the expression) -- mirror it into env first, same workaround as
-      # the publish job below.
-      AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
+      # NOTE: the signing key is deliberately NOT available in this job.
+      # It compiles code and runs third-party build tools; signing happens in
+      # the publish job (scripts/sign-release.sh), so these steps cannot read
+      # the key. RPMs built here are unsigned until then.
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.23.12"
-
-      - name: import RPM signing key
-        if: ${{ env.AXIOM_GPG_PRIVATE_KEY != '' }}
-        run: |
-          echo "$AXIOM_GPG_PRIVATE_KEY" > /tmp/axiom-signing-private.asc
-          echo "GPG_KEY_FILE=/tmp/axiom-signing-private.asc" >> "$GITHUB_ENV"
+          go-version: "1.27.4"
 
       - name: determine version
         id: version
+        env:
+          # Passed through the environment, never interpolated into the
+          # script, so a crafted dispatch input cannot inject shell.
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$INPUT_VERSION"
+            publish=false
           else
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "publish=true" >> "$GITHUB_OUTPUT"
+            version="$GITHUB_REF_NAME"
+            publish=true
           fi
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "error: version must look like v1.2.3 or v0.0.0-dryrun, got: $version" >&2
+            exit 1
+          fi
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
 
       - name: install packaging tools (nfpm, zip, envsubst)
         run: |
-          curl -sL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
-            | tar -xz -C /usr/local/bin nfpm
+          curl -fsSL -o /tmp/nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          # Integrity pin only: this digest was copied from the release's own
+          # checksums.txt, so it detects a later substitution of the archive
+          # but does NOT independently authenticate it. Independent options:
+          # cosign verify-blob of checksums.txt against the release's
+          # checksums.txt.sigstore.json, or build nfpm from source with
+          # `go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0`
+          # (module hashes are checked against sum.golang.org). Update this
+          # digest together with NFPM_VERSION.
+          echo "0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783  /tmp/nfpm.tar.gz" | sha256sum -c -
+          tar -xz -C /usr/local/bin -f /tmp/nfpm.tar.gz nfpm
           chmod +x /usr/local/bin/nfpm
           nfpm --version
           sudo apt-get update
@@ -88,18 +101,12 @@ jobs:
           go test ./...
 
       - name: build release artifacts
-        run: VERSION=${{ steps.version.outputs.value }} bash scripts/build-release.sh
-
-      - name: verify RPM signatures
-        run: |
-          rpm --import packaging/rpm/axiom-signing-public.asc
-          for f in dist/*/*.rpm; do
-            echo "-- $f --"
-            rpm -K "$f"
-          done
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: bash scripts/build-release.sh
 
       - name: upload linux/windows artifacts for the MSI and publish jobs
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist-base
           path: dist/${{ steps.version.outputs.value }}/*
@@ -117,9 +124,9 @@ jobs:
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dist-base
           path: dist/${{ needs.build.outputs.version }}
@@ -134,7 +141,7 @@ jobs:
         shell: bash
         run: bash scripts/build-msi.sh
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist-msi
           path: dist/${{ needs.build.outputs.version }}/*.msi
@@ -145,45 +152,76 @@ jobs:
     name: collect and publish
     needs: [build, msi]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write      # sign the build-provenance attestation
+      attestations: write
     env:
       VERSION: ${{ needs.build.outputs.version }}
-      # `if:` can't reference `secrets` directly -- see the build job.
-      AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
+      # Public info -- matches packaging/rpm/axiom-signing-public.asc. The
+      # secret key is the AXIOM_GPG_PRIVATE_KEY repo secret and is exposed
+      # only to the signing step below (never at job level).
+      GPG_KEY_ID: "C6A4ECAEA8BDA887"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dist-base
           path: dist/${{ needs.build.outputs.version }}
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: dist-msi
           path: dist/${{ needs.build.outputs.version }}
 
-      # build-release.sh wrote SHA256SUMS before the MSI existed; regenerate
-      # so the published checksums cover every published file.
-      - name: regenerate checksums over the full artifact set
+      # A real release (tag push) MUST be signed: if the signing secret is
+      # missing or empty this job fails here, before anything is published.
+      # A workflow_dispatch dry run may proceed unsigned (and says so).
+      - name: require signing key for a real release
+        env:
+          AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
+          PUBLISH: ${{ needs.build.outputs.publish }}
+        run: |
+          if [[ -z "$AXIOM_GPG_PRIVATE_KEY" ]]; then
+            if [[ "$PUBLISH" == "true" ]]; then
+              echo "::error::AXIOM_GPG_PRIVATE_KEY is not available; refusing to publish an unsigned release."
+              exit 1
+            fi
+            echo "::warning::No signing key available: this dry run produces UNSIGNED artifacts."
+          fi
+
+      - name: install rpm tooling
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
+
+      # Signs the RPMs, regenerates SHA256SUMS over the full artifact set
+      # (build-release.sh wrote it before the MSI existed), detach-signs it,
+      # and verifies everything against the public key committed in the
+      # repo. The key is imported into a temporary keyring that is removed on
+      # exit. See scripts/sign-release.sh.
+      - name: sign and verify release artifacts
+        env:
+          AXIOM_GPG_PRIVATE_KEY: ${{ secrets.AXIOM_GPG_PRIVATE_KEY }}
+          REQUIRE_SIGNING: ${{ needs.build.outputs.publish == 'true' && '1' || '0' }}
+        run: bash scripts/sign-release.sh
+
+      - name: show checksums
         run: |
           cd "dist/${VERSION}"
-          rm -f SHA256SUMS
-          sha256sum axiom-* > SHA256SUMS
           ls -la
           cat SHA256SUMS
 
-      # Detached-signs SHA256SUMS (not each artifact individually) -- every
-      # published file's hash is in that one file, so one signature over it
-      # verifies all of them. See docs/verifying-downloads.md.
-      - name: sign checksums
-        if: ${{ env.AXIOM_GPG_PRIVATE_KEY != '' }}
-        run: |
-          echo "$AXIOM_GPG_PRIVATE_KEY" | gpg --batch --import
-          cd "dist/${VERSION}"
-          gpg --batch --yes --armor --detach-sign -o SHA256SUMS.asc SHA256SUMS
+      # SLSA build provenance for every published file, recorded in GitHub's
+      # attestation store. Verify with: gh attestation verify <file> -R nuwandev/axiom
+      # Not yet exercised: confirm with the v0.0.0-dryrun run before relying on it.
+      - name: attest build provenance
+        if: needs.build.outputs.publish == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/${{ needs.build.outputs.version }}/axiom-*
 
       - name: upload build artifacts (workflow run, every trigger)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: axiom-${{ needs.build.outputs.version }}
           path: dist/${{ needs.build.outputs.version }}/*

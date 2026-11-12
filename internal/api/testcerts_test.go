@@ -58,6 +58,13 @@ func newTestCA(t *testing.T) *testCA {
 // issue creates a leaf certificate (server or client) signed by the CA.
 func (ca *testCA) issue(t *testing.T, commonName string, extKeyUsage x509.ExtKeyUsage, serial int64) (certPEM, keyPEM []byte) {
 	t.Helper()
+	return ca.issueValid(t, commonName, extKeyUsage, serial, time.Now().Add(-time.Hour), time.Now().Add(24*time.Hour))
+}
+
+// issueValid is issue with an explicit validity window, used to mint expired
+// or not-yet-valid certificates.
+func (ca *testCA) issueValid(t *testing.T, commonName string, extKeyUsage x509.ExtKeyUsage, serial int64, notBefore, notAfter time.Time) (certPEM, keyPEM []byte) {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generating key for %s: %v", commonName, err)
@@ -65,8 +72,8 @@ func (ca *testCA) issue(t *testing.T, commonName string, extKeyUsage x509.ExtKey
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(serial),
 		Subject:      pkix.Name{CommonName: commonName},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{extKeyUsage},
 	}

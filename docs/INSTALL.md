@@ -96,6 +96,18 @@ needs group membership to reach a resource (e.g. the `docker` group for
 `/var/run/docker.sock`), add the `axiom` user to that group explicitly and
 document why — don't broaden it "just in case."
 
+**Docker group membership is root-equivalent.** Anyone who can talk to the
+Docker socket can start a container that bind-mounts `/` and rewrite
+Axiom's binary, configuration, certificates, action scripts and audit log.
+`NoNewPrivileges` and `ProtectSystem` constrain Axiom's own process tree,
+not the Docker daemon, so adding `axiom` to the `docker` group removes the
+guarantee that Axiom "cannot modify its own binary, config, certificates, or
+action scripts". If you grant it, treat every action script as a root-level
+script and every client allowed to trigger it as root-equivalent on that
+host. Prefer rootless Podman/Docker for a dedicated account, or a socket
+proxy that exposes only the API calls the action needs. This is a
+deployment-owner decision, not something Axiom can enforce.
+
 ---
 
 ## 4. Installing
@@ -110,10 +122,10 @@ systemd unit in one step, and gives you real upgrade/uninstall support
 (`dnf upgrade` / `dnf remove`) instead of a manual script:
 
 ```bash
-curl -LO https://github.com/nuwandev/axiom/releases/download/v1.2.1/axiom-1.2.1-1.x86_64.rpm
-curl -LO https://github.com/nuwandev/axiom/releases/download/v1.2.1/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.0/axiom-2.0.0-1.x86_64.rpm
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-sudo dnf install ./axiom-1.2.1-1.x86_64.rpm
+sudo dnf install ./axiom-2.0.0-1.x86_64.rpm
 ```
 
 (`aarch64` builds are published alongside the `x86_64` ones for arm64
@@ -143,21 +155,21 @@ a full checkout of this repository.
 
 ```bash
 # pick the asset matching your server's CPU
-curl -LO https://github.com/nuwandev/axiom/releases/download/v1.2.1/axiom-v1.2.1-linux-amd64
-curl -LO https://github.com/nuwandev/axiom/releases/download/v1.2.1/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.0/axiom-v2.0.0-linux-amd64
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-chmod +x axiom-v1.2.1-linux-amd64
+chmod +x axiom-v2.0.0-linux-amd64
 
 # the installer and systemd unit are small text files pulled directly from
 # the tagged release, not the whole repo
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v1.2.1/scripts/install.sh
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v1.2.1/packaging/axiom.service
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.0.0/scripts/install.sh
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.0.0/packaging/axiom.service
 chmod +x install.sh
 
 # SYSTEMD_UNIT_SRC is required here: install.sh's default path assumes it's
 # still sitting inside the repo's scripts/ directory next to a sibling
 # packaging/ directory, which isn't true for a standalone download like this.
-sudo BIN_SRC=./axiom-v1.2.1-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
+sudo BIN_SRC=./axiom-v2.0.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
 ```
 
 Always verify the checksum (`sha256sum -c`) before running anything you
@@ -244,7 +256,7 @@ which client identities may call which actions.
 sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yaml
 
 # or, on a server with no checkout (matches §4a):
-curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom/v1.2.1/configs/example.yaml
+curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom/v2.0.0/configs/example.yaml
 sudo install -o root -g axiom -m 0640 config.yaml /etc/axiom/config.yaml
 
 sudo vi /etc/axiom/config.yaml
@@ -261,6 +273,8 @@ Key fields, see the example file for the full annotated reference:
 - `output.max_bytes` — per-stream captured-output cap, default 2 MiB.
 - `jobs.max_history` — in-memory job count retained for polling, default
   1000 (see §11 — this is not durable storage).
+- `jobs.max_concurrent` — cap on queued+running jobs across all actions,
+  default 16; over it a trigger gets `429` and creates no job.
 - `actions.<name>` — one entry per action this agent exposes: `command`
   (absolute path to a script under `/opt/axiom/actions`), `timeout`,
   `concurrency` (`shared` or `exclusive`), and a `parameters` schema.
@@ -289,8 +303,10 @@ Axiom checks, at startup, for every configured action:
 
 - the path is absolute and contains no `.`/`..` segments,
 - the file exists, is a regular file, and is executable,
-- the file and every containing directory up to `/` is owned by root (or by
-  whatever account Axiom itself runs as) and is not group/world-writable
+- the file and every containing directory up to `/` is owned by root and is
+  not group/world-writable (a file owned by the `axiom` service account is
+  refused, because that account could rewrite it; the development-only
+  `security.allow_service_owned_files: true` lifts this)
   (except where protected by the sticky bit, e.g. `/tmp` — not a location
   you should use for action scripts anyway),
 - (implicitly, via the same walk) no ancestor directory lets an untrusted
@@ -481,13 +497,14 @@ error rather than starting partially configured.
   untrusted local user (walked all the way to `/`).
 - Audit: `audit.path` must be absolute; its directory is subject to the
   same writability walk as certs/scripts.
-- Output/history bounds: `output.max_bytes` and `jobs.max_history`, if set,
-  must be within documented sane ranges.
+- Output/history/concurrency bounds: `output.max_bytes`, `jobs.max_history`
+  and `jobs.max_concurrent`, if set, must be within documented sane ranges.
 - Actions: at least one configured; each action name must match a safe
   charset; `command` must be an absolute, clean (no `.`/`..`) path; the
   script (and every containing directory) must exist, be executable, be
-  owned by root or the Axiom service account, and not be group/world-
-  writable; `timeout` must be within a sane 1s–24h range; `concurrency`
+  owned by root, and not be group/world-writable; the config file, CA,
+  server certificate and key must be root-owned and not group/world-
+  writable, and the key not accessible by other users (mode <= 0640); `timeout` must be within a sane 1s–24h range; `concurrency`
   must be `shared` or `exclusive`; each parameter name must match a safe
   charset, and at most 32 parameters per action.
 - Authorization: each identity name must match a safe charset, must
@@ -512,7 +529,9 @@ error rather than starting partially configured.
    `/etc/axiom/config.yaml` accordingly — check the changelog/spec diff.
 7. Start it back up: `sudo systemctl start axiom`, then verify per §10.
 
-In-flight jobs at the moment of `systemctl stop` do not survive the
+In-flight jobs at the moment of `systemctl stop` are cancelled (process
+group terminated, `finished` record `interrupted: agent shutting down`
+written when the audit path is available) and do not survive the
 restart (§11) — schedule upgrades for a quiet window, the same way you
 would for any deploy-triggering control plane.
 
@@ -527,6 +546,19 @@ sudo systemctl stop axiom
 sudo cp /usr/local/bin/axiom.previous /usr/local/bin/axiom
 sudo systemctl start axiom
 ```
+
+Rolling back from v2.0.0 to v1.2.1 also needs the configuration put back:
+v1.2.1 rejects unknown keys, so a v2.0.0 config containing any of
+`audit.syslog`, `jobs.max_concurrent` or `security.allow_service_owned_files`
+makes v1.2.1 refuse to start (verified with a v1.2.1 binary built from the
+tag). Remove those keys (or restore the v1.2.1-era file) before starting the
+old binary. A v1.2.1-era config starts unchanged under v2.0.0 as long as it
+meets the v2.0.0 requirements (every parameter has a `pattern`; scripts and
+certificates root-owned). Rolling back also reverts the v2.0.0
+security changes: job status and logs become readable by any CA-signed
+client, a certificate-less client reaches the HTTP layer again, and
+parameters may have no pattern or an unanchored one. Keep the v1.2.1 RPM or
+binary and its checksums available before upgrading.
 
 Config: keep your `/etc/axiom/config.yaml` under version control (outside
 this repository, since it's environment-specific and may reference internal

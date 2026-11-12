@@ -13,13 +13,14 @@ import (
 // to verify client certificates, and returns a tls.Config for the agent's
 // listener.
 //
-// ClientAuth is intentionally tls.RequestClientCert rather than
-// tls.RequireAndVerifyClientCert: the server always asks for a client
-// certificate, but whether one is required is enforced per-request by the
-// HTTP middleware (see Identity/Verify below). This is what allows a single
-// listener to serve an optionally-anonymous /health endpoint while every
-// other route still requires a verified client identity.
-func TLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
+// By default the handshake itself requires and verifies a client
+// certificate, so an unauthenticated peer never reaches the HTTP layer.
+// Only when allowAnonymousClients is true (the operator opted in to an
+// anonymous /health) is ClientAuth relaxed to tls.RequestClientCert, so one
+// listener can serve /health without a certificate; the HTTP middleware (see
+// Identity/Verify below) then still requires a verified identity on every
+// other route. Verify runs per request in both modes.
+func TLSConfig(certFile, keyFile, caFile string, allowAnonymousClients bool) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("loading server certificate/key: %w", err)
@@ -32,6 +33,11 @@ func TLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("no valid certificates found in CA file %q", caFile)
+	}
+
+	clientAuth := tls.RequireAndVerifyClientCert
+	if allowAnonymousClients {
+		clientAuth = tls.RequestClientCert
 	}
 
 	return &tls.Config{
@@ -50,7 +56,7 @@ func TLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 		},
 		Certificates: []tls.Certificate{cert},
 		ClientCAs:    pool,
-		ClientAuth:   tls.RequestClientCert,
+		ClientAuth:   clientAuth,
 	}, nil
 }
 

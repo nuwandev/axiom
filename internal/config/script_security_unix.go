@@ -9,13 +9,30 @@ import (
 	"syscall"
 )
 
+// trustedOwnerUID returns the non-root uid also accepted as owner of
+// security-relevant files: none in production (root only), so the service
+// account cannot modify its own scripts, certificates, CA or config. With
+// security.allow_service_owned_files the Axiom process's own uid is accepted
+// too; that exists for development and tests and is not recommended.
+func trustedOwnerUID(allowServiceOwned bool) uint32 {
+	if allowServiceOwned {
+		return uint32(os.Geteuid())
+	}
+	return 0
+}
+
+func ownerError(path string, ownerUID uint32, allowServiceOwned bool) error {
+	if !allowServiceOwned && ownerUID == uint32(os.Geteuid()) && ownerUID != 0 {
+		return fmt.Errorf("%q is owned by the Axiom service account (uid %d); it must be owned by root so the service cannot modify it (chown root:<group>), or set security.allow_service_owned_files: true for development", path, ownerUID)
+	}
+	return fmt.Errorf("%q is not owned by root (owner uid %d); security-relevant files must be owned by the administrator account", path, ownerUID)
+}
+
 // checkScriptSecurity enforces that a configured action script cannot be
 // tampered with by an untrusted local user: it must exist, be a regular
-// file, be executable, be owned by root (or the account that owns the
-// running Axiom process, so integration tests running as a non-root
-// service account still enforce "owned by the expected administrator"),
-// and not be writable by its group or by other users.
-func checkScriptSecurity(path string) error {
+// file, be executable, be owned by root (see trustedOwnerUID for the
+// development opt-in), and not be writable by its group or by other users.
+func checkScriptSecurity(path string, allowServiceOwned bool) error {
 	if err := rejectSymlink(path); err != nil {
 		return err
 	}
@@ -27,7 +44,45 @@ func checkScriptSecurity(path string) error {
 	if !ok {
 		return fmt.Errorf("%q: unable to determine file owner", path)
 	}
-	return evaluateScriptSecurity(path, info.IsDir(), info.Mode(), stat.Uid, uint32(os.Geteuid()))
+	if err := evaluateScriptSecurity(path, info.IsDir(), info.Mode(), stat.Uid, trustedOwnerUID(allowServiceOwned)); err != nil {
+		if info.Mode()&0o022 == 0 && info.Mode()&0o111 != 0 && !info.IsDir() {
+			return ownerError(path, stat.Uid, allowServiceOwned)
+		}
+		return err
+	}
+	return nil
+}
+
+// requireTrustedFile applies to the files Axiom trusts at startup (config,
+// CA, server certificate, server key): regular file, owned by root, not
+// writable by group or others. A private key must additionally not be
+// readable or accessible by others (group read is allowed: the documented
+// layout is root:axiom 0640 so the service can read it).
+func requireTrustedFile(path string, privateKey, allowServiceOwned bool) error {
+	if err := rejectSymlink(path); err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("not accessible: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%q is not a regular file", path)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%q: unable to determine file owner", path)
+	}
+	if info.Mode()&0o022 != 0 {
+		return fmt.Errorf("%q is group- or world-writable (mode %s); it must not be modifiable by untrusted users", path, info.Mode().Perm())
+	}
+	if privateKey && info.Mode()&0o007 != 0 {
+		return fmt.Errorf("%q is accessible by other users (mode %s); a private key must be at most 0640 (root:<service group>)", path, info.Mode().Perm())
+	}
+	if stat.Uid != 0 && stat.Uid != trustedOwnerUID(allowServiceOwned) {
+		return ownerError(path, stat.Uid, allowServiceOwned)
+	}
+	return nil
 }
 
 // evaluateScriptSecurity is the pure decision logic, separated so it can be
@@ -84,8 +139,8 @@ func rejectSymlink(path string) error {
 // through the directory (rename/unlink operate on the containing
 // directory's permissions, not the target file's). This closes that gap
 // for action scripts, the audit log directory, and mTLS material.
-func requireSecureParentDir(target string) error {
-	expectedUID := uint32(os.Geteuid())
+func requireSecureParentDir(target string, allowServiceOwned bool) error {
+	expectedUID := trustedOwnerUID(allowServiceOwned)
 	dir := filepath.Dir(target)
 
 	for {
@@ -120,7 +175,7 @@ func requireSecureParentDir(target string) error {
 			return fmt.Errorf("directory %q is group- or world-writable without the sticky bit (mode %s); this would let an untrusted local user replace %q", dir, info.Mode().Perm(), target)
 		}
 		if !sticky && stat.Uid != 0 && stat.Uid != expectedUID {
-			return fmt.Errorf("directory %q is not owned by root or the Axiom service account (owner uid %d)", dir, stat.Uid)
+			return fmt.Errorf("directory %q is not owned by root (owner uid %d); a directory the service account owns lets it replace what is inside (set security.allow_service_owned_files: true only for development)", dir, stat.Uid)
 		}
 
 		parent := filepath.Dir(dir)

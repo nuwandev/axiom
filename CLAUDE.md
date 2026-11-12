@@ -1,6 +1,6 @@
 # Axiom — notes for AI coding agents
 
-Go 1.23 static binary, Linux (systemd, RHEL-family validated) and Windows
+Go 1.27 static binary, Linux (systemd, RHEL-family validated) and Windows
 (service as `NT SERVICE\axiom`; Server 2022 and Windows 10/11 Pro validated).
 Platform differences live behind `_unix.go` / `_windows.go` build tags.
 

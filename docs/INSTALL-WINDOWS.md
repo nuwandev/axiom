@@ -2,6 +2,11 @@
 
 **On Linux?** See [`getting-started.md`](getting-started.md) instead.
 
+**Audit scope:** the Windows build writes only a local audit file, which the
+service account can modify. It has no journald/syslog forwarding
+(`audit.syslog` is rejected here), so it does not provide a tamper-resistant,
+centrally collected audit record and is not suitable where one is required.
+
 Generic by design: no company-specific hosts, IPs, or credentials.
 
 Target platform: **Windows Server 2022** (x64), using the in-box Windows

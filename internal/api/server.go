@@ -59,5 +59,5 @@ func (s *Server) Handler() http.Handler {
 
 // TLSConfig builds the server's mTLS listener configuration.
 func (s *Server) TLSConfig() (*tls.Config, error) {
-	return auth.TLSConfig(s.cfg.CertFile, s.cfg.KeyFile, s.cfg.CAFile)
+	return auth.TLSConfig(s.cfg.CertFile, s.cfg.KeyFile, s.cfg.CAFile, s.cfg.HealthAllowAnonymous)
 }

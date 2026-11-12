@@ -44,7 +44,10 @@ elif ! command -v envsubst >/dev/null 2>&1; then
   BUILD_RPMS=0
 fi
 
-# RPM signing is optional: set GPG_KEY_FILE (path to an armored secret key)
+# RPM signing here is optional and for local/dev builds. CI never passes the
+# key to this script; the release workflow signs in its publish job with
+# scripts/sign-release.sh (fails a real release if the key is unavailable).
+# To sign locally anyway: set GPG_KEY_FILE (path to an armored secret key)
 # and GPG_KEY_ID (its key ID) to sign; NFPM_RPM_PASSPHRASE too if that key
 # has a passphrase. See docs/verifying-downloads.md.
 if [[ -n "${GPG_KEY_FILE:-}" && -n "${GPG_KEY_ID:-}" ]]; then
@@ -114,6 +117,23 @@ if [[ "${BUILD_MSI:-0}" == "1" ]]; then
 else
   echo "NOTE: skipping the Windows MSI (WiX needs a Windows host); run scripts/build-msi.sh there, or set BUILD_MSI=1."
 fi
+
+# Record exactly which toolchain and modules produced these binaries, so a
+# reviewer can compare it with go.mod and the CI-pinned Go version. This is a
+# build record, not an SBOM in a standard format.
+echo "recording build info..."
+{
+  echo "version: ${VERSION}"
+  echo "commit: ${COMMIT}"
+  echo "toolchain: $(go version)"
+  echo "GOFLAGS: ${GOFLAGS:-}"
+  echo
+  echo "== go list -m all"
+  go list -m all
+  echo
+  echo "== go version -m axiom-${VERSION}-linux-amd64"
+  go version -m "${OUT_DIR}/axiom-${VERSION}-linux-amd64"
+} > "${OUT_DIR}/axiom-${VERSION}-build-info.txt"
 
 echo "generating checksums..."
 (

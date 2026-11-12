@@ -266,9 +266,9 @@ curl --cacert ca.crt --cert client.crt --key client.key \
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/actions/{action}` | Trigger a configured action. Optional JSON body: `{"parameters": {...}}`. Returns `202` + `{job_id, status}`, or `400`/`403`/`404`/`409` on rejection. |
-| `GET` | `/v1/jobs/{job_id}` | Job status/result. `404` if unknown or the agent has since restarted. |
-| `GET` | `/v1/jobs/{job_id}/logs` | Captured, size-bounded stdout/stderr. |
-| `GET` | `/health` | Agent health. Authenticated by default; anonymous access is an explicit opt-in per agent. |
+| `GET` | `/v1/jobs/{job_id}` | Job status/result. Visible only to the identity that triggered the job; `404` if unknown, owned by another identity, or the agent has since restarted. |
+| `GET` | `/v1/jobs/{job_id}/logs` | Captured, size-bounded stdout/stderr. Same owner-only visibility as the job itself. |
+| `GET` | `/health` | Agent health. Authenticated by default (a client certificate is required at the TLS handshake); anonymous access is an explicit opt-in per agent. |
 
 That is the complete API. There is no endpoint that accepts an arbitrary
 command, by design.
@@ -294,7 +294,7 @@ command, by design.
 
 ## Development / testing
 
-Requires Go 1.23+. Linux (or other unix) is the primary development host;
+Requires Go 1.27.4+. Linux (or other unix) is the primary development host;
 the tree also builds and tests for `GOOS=windows` (see
 [`docs/development.md`](docs/development.md#windows)).
 
@@ -324,7 +324,7 @@ table separates **what this implementation supports architecturally** from
 | Other systemd-based Linux (Ubuntu, Debian and derivatives) | Yes — same static binary and unit file layout; no RHEL-specific code path exists | Not yet run; expected to work, not validated |
 | Windows Server 2016 / 2019 / 2022 / 2025 | Yes — service account model (`NT SERVICE\*` virtual accounts), Job Objects, and `icacls`/`takeown.exe` are all available since Windows Server 2008 R2, well below this project's Go-toolchain floor of Windows Server 2016/Windows 10 (Go 1.21+ does not run on anything older); capability scripts always run under the Windows PowerShell 5.1 that ships by default on every supported release, independent of whether PowerShell 7 is also installed | **Windows Server 2022**, full end-to-end real-host pass (install → ACLs → service start → mTLS → SCM recovery → bad-config diagnostics → least-privilege → uninstall; see [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md)) |
 | Windows 10 / 11 Pro (or any edition with Services + PowerShell, i.e. all of them) | Yes — nothing in the code checks for or depends on "Server" edition specifically; the service, ACL, and PowerShell-invocation logic is edition-agnostic | **Windows 11 Pro**, full end-to-end real-host pass identical in scope to the Windows Server run above. Found and fixed the one real Server-vs-Pro difference in the process: Windows 10/11 Pro's out-of-box PowerShell execution policy (`Restricted`) blocked every capability script until `internal/executor/launch_windows.go` was updated to invoke scripts with `-ExecutionPolicy Bypass` (scoped to that one fixed, ACL-protected invocation only — see `docs/windows-security.md`); re-validated clean afterward with the host's policy never touched. |
-| Windows 7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 | **No** — the Go 1.23 toolchain this project builds with does not support running on these at all (Go dropped them in 1.21), independent of anything Axiom-specific | N/A |
+| Windows 7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 | **No** — the Go toolchain this project builds with (1.27) does not support running on these at all (Go dropped them in 1.21), independent of anything Axiom-specific | N/A |
 
 See [`docs/INSTALL-WINDOWS.md`](docs/INSTALL-WINDOWS.md) and
 [`docs/windows-security.md`](docs/windows-security.md) for the Windows
