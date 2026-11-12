@@ -43,7 +43,8 @@ expect() { # expect "desc" expected actual
   if [[ "$2" == "$3" ]]; then ok "$1 ($3)"; else bad "$1: expected '$2', got '$3'"; fi
 }
 
-dnf -y -q install openssl procps-ng >/dev/null
+# systemd is an RPM dependency (installed, not running: a container has no init).
+dnf -y -q install systemd openssl procps-ng >/dev/null
 cat /etc/os-release | sed -n 's/^PRETTY_NAME=//p'
 
 echo "== baseline RPM v${BASELINE_VERSION}: signature and install"
@@ -57,6 +58,12 @@ expect "/etc/axiom/certs"      "root:axiom 750"  "$(stat -c '%U:%G %a' /etc/axio
 expect "/opt/axiom/actions"    "root:axiom 750"  "$(stat -c '%U:%G %a' /opt/axiom/actions)"
 expect "/var/log/axiom"        "axiom:axiom 750" "$(stat -c '%U:%G %a' /var/log/axiom)"
 expect "hello-world.sh"        "root:axiom 750"  "$(stat -c '%U:%G %a' /opt/axiom/actions/hello-world.sh)"
+if systemd-analyze verify /etc/systemd/system/axiom.service 2>&1 | tee /tmp/verify.out | grep -q .; then
+  # verify prints only problems: any output is reported, but only an error line fails the check
+  grep -qiE "error|failed|not found|invalid" /tmp/verify.out && bad "systemd-analyze verify: $(head -3 /tmp/verify.out)" || ok "systemd-analyze verify reports only warnings: $(head -1 /tmp/verify.out)"
+else
+  ok "systemd-analyze verify: unit is clean"
+fi
 
 echo "== configuration (v${BASELINE_VERSION} example config, unchanged apart from nothing)"
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 -subj "/CN=ci-ca" \
