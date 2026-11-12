@@ -6,7 +6,9 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
-## [Unreleased]
+## [2.0.1] — 2026-11-13
+
+Patch release; no configuration or API changes.
 
 ### Fixed
 - When systemd stops the service it signals the whole control group at once,
