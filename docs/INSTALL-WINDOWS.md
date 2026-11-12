@@ -181,10 +181,12 @@ installer calls) as a `SERVICE_WIN32_OWN_PROCESS` service:
 - **Recovery:** restart after 5s, three times, failure count reset after one
   day — the analogue of the Linux unit's `Restart=on-failure`.
 - **Stop / shutdown:** SCM `Stop` cancels the same graceful path the unix
-  build runs on `SIGTERM` — the HTTP listener drains for up to 30s. A job
-  still running when the process exits is terminated by its Job Object
-  (§6); its `accepted` and `started` records are already in the audit log,
-  the same as an unexpected restart on Linux.
+  build runs on `SIGTERM` — the HTTP listener drains for up to 30s, then
+  running jobs are stopped (their Job Object, §6, kills the process tree)
+  and recorded as `interrupted: agent shutting down` while the audit log is
+  still open. After a crash or a forced kill that path is skipped: the job
+  has `accepted` and `started` records and no `finished` record, the same as
+  an unexpected restart on Linux.
 - **Logging:** structured JSON to `%ProgramData%\Axiom\logs\axiom.log`;
   startup and fatal errors also go to the Windows **Application** event log
   (source `axiom`), so a failed `Start-Service` is diagnosable without file

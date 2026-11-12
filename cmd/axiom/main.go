@@ -114,6 +114,7 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		}
 	case <-ctx.Done():
 		logger.Info("shutting down")
+		jobMgr.BeginShutdown()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {

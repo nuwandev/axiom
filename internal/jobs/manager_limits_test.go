@@ -231,3 +231,41 @@ func TestManager_ShutdownInterruptsRunningJobsAndAuditsThem(t *testing.T) {
 		t.Errorf("audit log has no interrupted finished record:\n%s", log)
 	}
 }
+
+// A script killed from outside (as systemd does to the whole control group on
+// a stop) is recorded with the signal, and attributed to the shutdown when one
+// is under way, instead of an unexplained failure.
+func TestManager_ExternallyKilledJobRecordsTheSignal(t *testing.T) {
+	dir := t.TempDir()
+	script := writeScript(t, dir, "killed.sh", "kill -TERM $$\n")
+	actions := map[string]*config.Action{"a": {Name: "a", Command: script, Timeout: 10 * time.Second}}
+
+	m, logPath := newLimitedManager(t, actions, 4)
+	job, err := m.Trigger(context.Background(), "a", "ci", nil)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	snap := waitForTerminal(t, m, job.ID, 10*time.Second)
+	if snap.Status != StatusFailed || snap.Error != "terminated by signal: terminated" {
+		t.Errorf("job = %+v, want failed with %q", snap, "terminated by signal: terminated")
+	}
+
+	// Same kill, but a stop is announced while the job is still running (it
+	// sleeps first), as when systemd stops the service.
+	slow := writeScript(t, dir, "killed-slow.sh", "sleep 1\nkill -TERM $$\n")
+	m2, _ := newLimitedManager(t, map[string]*config.Action{"a": {Name: "a", Command: slow, Timeout: 10 * time.Second}}, 4)
+	job2, err := m2.Trigger(context.Background(), "a", "ci", nil)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	m2.BeginShutdown()
+	snap2 := waitForTerminal(t, m2, job2.ID, 10*time.Second)
+	if snap2.Status != StatusFailed || !strings.Contains(snap2.Error, "interrupted: agent shutting down") {
+		t.Errorf("job during shutdown = %+v, want an interrupted reason", snap2)
+	}
+	data, _ := os.ReadFile(logPath)
+	if !strings.Contains(string(data), "terminated by signal: terminated") {
+		t.Errorf("audit record does not carry the signal:\n%s", data)
+	}
+}

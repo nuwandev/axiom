@@ -6,6 +6,18 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [2.0.1] — 2026-11-13
+
+Patch release; no configuration or API changes.
+
+### Fixed
+- When systemd stops the service it signals the whole control group at once,
+  so a running action could die before Axiom's own shutdown path ran and its
+  `finished` audit record said only `failed`. A job killed by a signal Axiom
+  did not send is now recorded as `terminated by signal: <name>`, and as
+  `interrupted: agent shutting down (...)` when a stop is under way. Found
+  while testing the published v2.0.0 RPM under real systemd.
+
 ## [2.0.0] — 2026-11-12
 
 Major release: the config schema and the authentication behaviour change in
