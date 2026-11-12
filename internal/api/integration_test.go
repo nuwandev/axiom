@@ -53,6 +53,8 @@ type testEnvOptions struct {
 	maxConcurrent int
 	// slowAction adds "slow.action" (sleeps 5s), allowed for ci-jenkins.
 	slowAction bool
+	// unlistedAction adds "frontend.deploy", which no identity may run.
+	unlistedAction bool
 }
 
 func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
@@ -73,6 +75,12 @@ func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
 	if opts.slowAction {
 		slow := writeFile(t, dir, "slow.sh", []byte("#!/bin/sh\nsleep 5\n"), 0o750)
 		opts.extraActionsYAML += "  slow.action:\n    command: " + slow + "\n    timeout: 10s\n    concurrency: shared\n"
+	}
+	if opts.unlistedAction {
+		// A script owned by the test user, not a system binary: /bin/true is a
+		// symlink on some distributions and config.Load rejects symlinks.
+		unlisted := writeFile(t, dir, "unlisted.sh", []byte("#!/bin/sh\nexit 0\n"), 0o750)
+		opts.extraActionsYAML += "  frontend.deploy:\n    command: " + unlisted + "\n    timeout: 5s\n"
 	}
 	identityExtra := ""
 	if opts.slowAction {
@@ -198,10 +206,7 @@ func TestIntegration_UnauthorizedIdentityIsRejected(t *testing.T) {
 }
 
 func TestIntegration_DisallowedActionForIdentityIsRejected(t *testing.T) {
-	env := newTestEnv(t, &testEnvOptions{extraActionsYAML: `  frontend.deploy:
-    command: /bin/true
-    timeout: 5s
-`})
+	env := newTestEnv(t, &testEnvOptions{unlistedAction: true})
 	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 12)
 	client := env.clientFor(certPEM, keyPEM)
 
