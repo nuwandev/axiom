@@ -109,3 +109,49 @@ directory above them) are checked for correct ownership and that no
 untrusted local user could have modified them. Axiom refuses to start
 otherwise, with a specific error naming the problem — see
 [`INSTALL.md` §12](INSTALL.md#12-startup-validation-reference).
+
+## If a client certificate is compromised
+
+Axiom does **not** check certificate revocation (no CRL or OCSP). A stolen
+client certificate whose CA-signed chain is still valid keeps working for its
+identity until it expires or that identity is removed from the config. So:
+
+1. **Disable the identity immediately.** Remove its entry under
+   `authorization.identities` (or just the actions it must not run) in
+   `/etc/axiom/config.yaml`, then `systemctl restart axiom` (Axiom has no hot
+   reload; `Restart-Service axiom` on Windows). A restart cancels running jobs
+   cleanly and drops all in-memory job state. Until the restart, the old
+   authorization stays in force.
+2. **Stop the CA issuing that identity again**, or issue the replacement under
+   a different Common Name. Authorization is by exact Common Name, so a new
+   certificate for the same CN from the same CA is accepted as the same
+   identity. Rotating the CA (new `ca.crt`, restart) invalidates every client
+   certificate signed by the old one.
+3. **Review the audit trail** (the central collector, not just the local
+   file) for what that identity ran: `accepted`/`started`/`finished` records
+   carry the identity, action and declared parameters.
+4. Revisit lifetimes. Short-lived client certificates (days, not years) are
+   the only expiry-based mitigation available, and one certificate per
+   pipeline narrows what a single theft can run.
+
+## CA trust assumptions
+
+- Every certificate in `security.mtls.ca_file`, including an intermediate,
+  is a trust anchor; Axiom applies no name constraints or path-length policy
+  of its own. Put only the CA(s) you control and trust there.
+- Identity is the client certificate's Common Name, matched exactly against
+  `authorization.identities`. The CA must therefore never issue a certificate
+  whose Common Name is chosen by the requester; otherwise any holder of a
+  valid enrollment can claim an authorized identity. SANs are ignored.
+- Client certificates need the `clientAuth` extended key usage; verification
+  uses the current time, so expired and not-yet-valid certificates are
+  refused on every request.
+- The server private key is read from `security.mtls.key_file`. Axiom refuses
+  to start if it is accessible by other users (mode wider than `0640`),
+  writable by group or others, symlinked, or owned by anyone but root (set
+  `root:axiom 0640`, as the installer layout does).
+- `security.health.allow_anonymous` is `false` by default. If enabled, the
+  TLS layer accepts any peer and only `/health` is served without a verified
+  certificate; requests from an unauthenticated peer to any other route are
+  rejected and each one writes an audit record, so leave it off unless a
+  monitor truly cannot present a certificate.

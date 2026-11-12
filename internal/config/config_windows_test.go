@@ -21,7 +21,7 @@ func TestCheckScriptSecurity_Windows_RequiresPS1(t *testing.T) {
 	if err := os.WriteFile(bat, []byte("echo hi\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := checkScriptSecurity(bat)
+	err := checkScriptSecurity(bat, false)
 	if err == nil || !strings.Contains(err.Error(), "ps1") {
 		t.Fatalf("checkScriptSecurity(.bat) = %v, want a .ps1 error", err)
 	}
@@ -36,7 +36,7 @@ func TestCheckScriptSecurity_Windows_RejectsUserWritableScript(t *testing.T) {
 	// A temp file is owned by the current (non-trusted) user with an
 	// inherited full-control ACE — exactly the insecure condition the check
 	// must reject.
-	if err := checkScriptSecurity(ps1); err == nil {
+	if err := checkScriptSecurity(ps1, false); err == nil {
 		t.Fatalf("checkScriptSecurity on a user-owned temp .ps1 = nil, want an error")
 	}
 }

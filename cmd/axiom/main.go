@@ -41,13 +41,31 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("platform prerequisites: %w", err)
 	}
 
-	auditLogger, err := audit.Open(cfg.AuditLogPath, cfg.AgentID)
+	var sinks []audit.Sink
+	if cfg.AuditSyslog {
+		syslogSink, err := audit.NewSyslogSink()
+		if err != nil {
+			return fmt.Errorf("opening syslog audit sink: %w", err)
+		}
+		sinks = append(sinks, syslogSink)
+	}
+	auditLogger, err := audit.Open(cfg.AuditLogPath, cfg.AgentID, sinks...)
 	if err != nil {
 		return fmt.Errorf("opening audit log: %w", err)
 	}
 	defer auditLogger.Close()
 
 	jobMgr := jobs.NewManager(cfg, auditLogger, logger)
+	// Runs before auditLogger.Close (defers are LIFO): in-flight jobs are
+	// stopped and their "finished" (interrupted) records written while the
+	// audit log is still open. A crash or SIGKILL skips this entirely.
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := jobMgr.Shutdown(stopCtx); err != nil {
+			logger.Error("jobs still running at shutdown; their finished records may be missing", "error", err)
+		}
+	}()
 
 	server, err := api.NewServer(cfg, jobMgr, auditLogger, logger)
 	if err != nil {

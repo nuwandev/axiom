@@ -64,12 +64,14 @@ Axiom. Write capability scripts defensively — see
 
 **Can:** open a TCP connection to the listener, attempt a TLS handshake.
 **Cannot:** complete any request. `security.mtls.ca_file` is the sole trust
-root; `internal/auth.TLSConfig` requests a client certificate, and every
-route except an explicitly-opted-in anonymous `/health` requires one that
-chain-verifies against that CA (`internal/auth.Verify`, enforced in
-`internal/api` middleware — see [`internal/api/middleware.go`](../internal/api/middleware.go)).
-No certificate, or a certificate not signed by the configured CA, gets `401`
-with no further processing.
+root. Unless `security.health.allow_anonymous` is set, `internal/auth.TLSConfig`
+requires and verifies a client certificate during the handshake
+(`tls.RequireAndVerifyClientCert`), so a peer without a certificate signed by
+that CA never reaches the HTTP layer. Even then, every request re-verifies the
+chain (`internal/auth.Verify`, enforced in `internal/api` middleware — see
+[`internal/api/middleware.go`](../internal/api/middleware.go)). When anonymous
+health is opted in, the handshake only requests a certificate, and the
+middleware returns `401` for every route except `/health`.
 **Blast radius:** none. TLS handshake / connection-level noise only.
 
 ## 2. Attacker with an unauthorized (but CA-trusted) client certificate
@@ -77,7 +79,9 @@ with no further processing.
 E.g. a certificate the CA issued for a different, unrelated purpose, or a
 decommissioned identity whose cert is still technically valid.
 **Can:** complete the TLS handshake and reach the authorization check.
-**Cannot:** trigger any action. Authorization is an explicit
+**Cannot:** trigger any action, or read another identity's job status or
+logs (`GET /v1/jobs/{id}` and `/logs` return `404` unless the caller is the
+identity that triggered the job). Authorization is an explicit
 identity → allowlist mapping (`config.Identity.IsAllowed`) with **default
 deny**: an identity absent from `authorization.identities`, or an action
 absent from that identity's list, is rejected (`403`) — there is no
@@ -365,6 +369,77 @@ no cooperation from the dying parent.
 
 ---
 
+## Container runtime access
+
+An action that runs `docker` needs the `axiom` account in the `docker` group
+(or an equivalent socket grant). That access is root-equivalent on the host:
+a container can bind-mount `/` and replace Axiom's binary, config,
+certificates, action scripts and audit log, and the systemd sandbox
+(`NoNewPrivileges`, `ProtectSystem`, `CapabilityBoundingSet=`) does not
+constrain the Docker daemon. With that grant, the guarantee that the agent
+cannot modify itself no longer holds; every allowlisted action and every
+identity allowed to trigger it is root-equivalent. Whether to grant it, and
+which compensating control to use (rootless runtime, socket proxy, a
+dedicated host), is a deployment decision the operator must make. Action scripts
+should also pass `--no-deps` to `docker compose up` for a named service, so
+a deploy cannot recreate unrelated dependencies such as a cache or database.
+
+## Audit trail integrity
+
+> **Local audit file: operational copy only.**
+> **Central collector: authoritative audit record.**
+
+Action scripts run as the same service account that owns the local audit
+file (`audit.path`) and its directory, so a compromised or injectable action
+can alter or delete that file. **The local file is application-level
+evidence, not a tamper-resistant record.**
+
+With `audit.syslog: true` every record is also emitted as one structured JSON
+message to journald/syslog (facility AUTH, identifier `axiom-audit`). The
+authoritative, tamper-resistant record is the collector the host forwards
+that stream to (for example a central SIEM), which the service account
+cannot modify; its retention, access control and integrity guarantees are
+the operator's, not Axiom's. Because action scripts run under the same UID
+and systemd unit, a script can also *write* a message to the same syslog
+identifier, so a forged extra record is possible; erasing a real one is not.
+journald attaches the sender's executable and PID as trusted metadata
+(`_EXE`, `_PID`) that a script cannot spoof, so authoritative records are
+those with `_EXE=/usr/local/bin/axiom`. Whether that metadata survives the
+forwarding path to your collector depends on how it is forwarded (a
+plain-text rsyslog relay usually drops it); confirm this with the procedure
+in [`audit-validation.md`](audit-validation.md). The syslog/journald hand-off is
+not itself tamper-resistant or authenticated: the collector must preserve
+the sender metadata, or the records must travel over an authenticated,
+application-specific transport, for the forwarded stream to distinguish
+Axiom's records from a script's. Action stdout/stderr is
+captured in memory for the jobs API and is never sent to journald/syslog by
+Axiom, so it cannot appear in the audit stream. Axiom fails closed on the accept and start paths: if the
+local write or the syslog hand-off fails for the `accepted` record the action
+is refused, and if it fails for the `started` record the job is failed and the
+script is not executed. The `finished` record is best effort (the outcome is
+already decided): a failed write is logged and cannot be retried. On a
+graceful stop (SIGTERM or service stop) running jobs are cancelled and
+recorded as `interrupted: agent shutting down`; a crash, `SIGKILL`, power
+loss or a collector outage can still leave jobs with no `finished` record or
+records that never reached the collector. Nothing here makes the local file or
+the syslog hand-off tamper-proof. Delivery
+from the local syslog daemon on to a remote collector happens after that
+hand-off and is outside Axiom's control. Records contain the identity,
+action, job ID and declared parameters (values of parameters whose names
+suggest secrets are redacted); never the process environment, job output,
+keys or certificates. Free-text fields (identity, action, reason) are capped at 512 bytes. Declared
+parameter values are bounded separately (4096 bytes each, and by each
+parameter's pattern); a record too large for the syslog datagram makes the
+write fail, so the action is refused rather than run unaudited.
+
+**Scope:** the forwarded audit sink exists on Linux only. The Windows build
+has no equivalent (`audit.syslog` is a configuration error there), so its
+local file is the only audit record and is writable by the service account.
+The Windows build is not part of a deployment that relies on forwarded audit
+evidence.
+
+---
+
 ## Summary of fixes made during this hardening pass (not just documented)
 
 - Config now validates action/parameter/identity name charsets, script and
@@ -409,3 +484,24 @@ no cooperation from the dying parent.
   `setsid()`, and deliberately not built — disproportionate complexity for
   a failure mode that doesn't match how the actual target action scripts
   (docker/kubectl/systemctl/pm2 CLI wrappers) behave.
+
+## Resource limits and remaining bounds
+
+- **Concurrent jobs:** `jobs.max_concurrent` (default 16) caps queued+running
+  jobs across all actions; over the cap the API answers `429` and creates no
+  job. `exclusive` actions additionally allow one run at a time.
+- **Retained output:** bounded by `output.max_bytes` per stream per job and
+  `jobs.max_history` finished jobs (about 4 GiB worst case at defaults;
+  see `configuration.md` for sizing). Running jobs are held in addition.
+- **Request size:** body 64 KiB, 64 parameters, 4096 bytes per value; header
+  and timeout limits are set on the HTTP server.
+- **Not bounded by Axiom:** connection or request rate, TLS handshakes from
+  anyone who can reach the port, CPU, process count or file descriptors used
+  by action scripts, and audit writes (each request writes and syncs a
+  record). Contain these with network controls and systemd resource limits
+  (`TasksMax`, `MemoryMax`, `LimitNOFILE`, `CPUQuota`); the shipped unit does
+  not set them because the right values depend on what the actions run.
+- **Orphans:** after a timeout or cancel Axiom kills the action's process
+  group. A descendant that leaves the group (`setsid`) survives that; it is
+  covered on systemd by the unit's control-group kill on stop, and Axiom no
+  longer blocks on its inherited output pipes.

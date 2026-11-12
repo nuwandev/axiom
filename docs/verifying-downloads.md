@@ -39,9 +39,19 @@ sudo rpm --import axiom-signing-public.asc
 rpm -K axiom-1.2.0-1.x86_64.rpm   # expect "... rsa sha256 (md5) pgp md5 OK"
 ```
 
-## If `AXIOM_GPG_PRIVATE_KEY` isn't configured
+## How signing is enforced
 
-Signing is best-effort: `scripts/build-release.sh` builds unsigned RPMs
-(with a warning) and the release workflow skips `SHA256SUMS.asc` if the
-`AXIOM_GPG_PRIVATE_KEY` repository secret isn't set. An unsigned release
-still publishes `SHA256SUMS` for plain checksum verification.
+Signing happens in the release workflow's `publish` job only
+(`scripts/sign-release.sh`); the `build` job that compiles the code never
+receives the key. For a real release (a `vX.Y.Z` tag push) the workflow fails
+if the `AXIOM_GPG_PRIVATE_KEY` repository secret is missing, so an unsigned
+release cannot be published. The script also verifies the RPM signatures and
+`SHA256SUMS.asc` against the public key committed in this repository before
+anything is uploaded; a signature made by a different key fails the release.
+
+A manual `workflow_dispatch` dry run does not publish anything. If the secret
+is missing it proceeds with a warning and produces unsigned artifacts, so do
+not treat dry-run artifacts as releasable.
+
+Local `scripts/build-release.sh` builds are unsigned unless `GPG_KEY_FILE` and
+`GPG_KEY_ID` are set; they are for development and testing only.

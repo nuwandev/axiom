@@ -95,17 +95,52 @@ output:
   max_bytes: 2097152   # optional, default 2 MiB; per stream, per job
 
 jobs:
+  max_concurrent: 16   # optional, default 16 (1-1024); queued+running jobs
+                        # across ALL actions
   max_history: 1000    # optional, default 1000; oldest FINISHED job is
                         # evicted once exceeded, a running job never is
 ```
+
+At `jobs.max_concurrent` a trigger returns `429` with `Retry-After` and
+creates no job; an `exclusive` action's lock is not left held by a rejected
+request. Every slot is released when a job ends (success, failure, timeout,
+cancellation, or shutdown).
+
+**Memory bound.** Finished jobs keep their captured output in memory until
+evicted. The worst case is roughly
+`max_history x 2 streams x output.max_bytes` plus the same for running jobs:
+about 4 GiB at the defaults (1000 x 2 x 2 MiB), if every job fills both
+streams. Size these to the host: for example `max_history: 200` and
+`max_bytes: 1048576` bound retained output at about 400 MiB. Per-request
+limits: body 64 KiB, 64 parameters, 4096 bytes per value; HTTP header and
+timeout limits are fixed in `cmd/axiom/main.go`. Axiom does not rate-limit
+connections or requests; put it behind your network controls, and add
+systemd limits (`MemoryMax`, `TasksMax`, `LimitNOFILE`) in the unit for
+resource containment of the whole process tree.
 
 Job history is in-memory only and does not survive a restart — the audit
 log (`audit.path`, default `/var/log/axiom/audit.log`) is the durable
 execution record. See [`operations`](INSTALL.md#11-job-history-and-restart-behavior).
 
-## Audit log path
+## Audit log
 
 ```yaml
 audit:
   path: /var/log/axiom/audit.log   # optional, this is the default
+  syslog: true                     # optional, default false; Linux only
 ```
+
+`audit.syslog` additionally emits every audit record as one JSON message to
+journald/syslog (facility AUTH, identifier `axiom-audit`). Axiom refuses to
+start if the syslog socket is unavailable, and refuses to run an action whose
+accept record cannot be delivered. The local file is owned by the service
+account that runs your actions, so treat it as application-level evidence;
+forward the syslog stream to a central collector the service account cannot
+modify:
+
+> **Local audit file: operational copy only.**
+> **Central collector: authoritative audit record.**
+
+Setting `audit.syslog` on Windows is a config error, so the Windows build has
+no forwarded audit trail. To check the path on a real host, follow
+[`audit-validation.md`](audit-validation.md).

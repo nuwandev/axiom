@@ -112,8 +112,8 @@ func TestManager_Windows_ValidatedParamReachesScriptAsInertEnv(t *testing.T) {
 	action := &config.Action{
 		Name: "echo", Command: script, Timeout: 60 * time.Second,
 		Parameters: map[string]config.Parameter{
-			// No pattern: prove the value is still inert even unvalidated.
-			"note": {Type: config.ParameterTypeString},
+			// Deliberately permissive pattern: a hostile value that passes validation must still be inert.
+			"note": {Type: config.ParameterTypeString, Pattern: `.+`},
 		},
 	}
 	p := action.Parameters["note"]

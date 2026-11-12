@@ -90,7 +90,18 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		dec := json.NewDecoder(body)
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				writeError(w, http.StatusBadRequest, "request body too large")
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		// Exactly one JSON value: reject trailing data rather than silently
+		// ignoring it (it could be a second, differently-parsed document).
+		if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, "invalid JSON body: unexpected data after the JSON object")
 			return
 		}
 	}
@@ -115,6 +126,11 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, jobs.ErrActionBusy):
 			writeError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, jobs.ErrTooManyJobs):
+			w.Header().Set("Retry-After", "10")
+			writeError(w, http.StatusTooManyRequests, err.Error())
+		case errors.Is(err, jobs.ErrShuttingDown):
+			writeError(w, http.StatusServiceUnavailable, err.Error())
 		default:
 			s.logger.Error("triggering action failed", "action", action, "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to start action")
@@ -126,6 +142,30 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		"job_id": job.ID,
 		"status": string(jobs.StatusQueued),
 	})
+}
+
+// ownedJob resolves {job_id} for the authenticated caller. A job is visible
+// only to the identity that triggered it: any other caller, and any unknown
+// or malformed ID, gets the same 404 so job IDs cannot be probed. On failure
+// it has already written the response and returns ok=false.
+func (s *Server) ownedJob(w http.ResponseWriter, r *http.Request) (jobs.Snapshot, bool) {
+	identity := identityFromContext(r.Context())
+	if identity == nil {
+		s.rejectUnauthenticated(w, r, "missing identity")
+		return jobs.Snapshot{}, false
+	}
+
+	jobID := r.PathValue("job_id")
+	if !jobs.ValidID(jobID) {
+		writeError(w, http.StatusNotFound, "job not found")
+		return jobs.Snapshot{}, false
+	}
+	snap, ok := s.jobs.Get(jobID)
+	if !ok || snap.RequestedBy != identity.CommonName {
+		writeError(w, http.StatusNotFound, "job not found")
+		return jobs.Snapshot{}, false
+	}
+	return snap, true
 }
 
 type jobResponse struct {
@@ -141,19 +181,8 @@ type jobResponse struct {
 
 // handleGetJob implements GET /v1/jobs/{job_id}.
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	if identityFromContext(r.Context()) == nil {
-		s.rejectUnauthenticated(w, r, "missing identity")
-		return
-	}
-
-	jobID := r.PathValue("job_id")
-	if !jobs.ValidID(jobID) {
-		writeError(w, http.StatusNotFound, "job not found")
-		return
-	}
-	snap, ok := s.jobs.Get(jobID)
+	snap, ok := s.ownedJob(w, r)
 	if !ok {
-		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
 
@@ -185,17 +214,11 @@ type jobLogsResponse struct {
 
 // handleGetJobLogs implements GET /v1/jobs/{job_id}/logs.
 func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
-	if identityFromContext(r.Context()) == nil {
-		s.rejectUnauthenticated(w, r, "missing identity")
+	snap, ok := s.ownedJob(w, r)
+	if !ok {
 		return
 	}
-
-	jobID := r.PathValue("job_id")
-	if !jobs.ValidID(jobID) {
-		writeError(w, http.StatusNotFound, "job not found")
-		return
-	}
-	stdout, stderr, stdoutTrunc, stderrTrunc, ok := s.jobs.Logs(jobID)
+	stdout, stderr, stdoutTrunc, stderrTrunc, ok := s.jobs.Logs(snap.ID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "job not found")
 		return

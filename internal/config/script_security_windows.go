@@ -12,7 +12,7 @@ import "github.com/nuwandev/axiom/internal/winsec"
 // grant write/modify/delete/take-ownership to none of the other principals
 // on the box — the Axiom service account included, so the agent can run its
 // capabilities but never rewrite them.
-func checkScriptSecurity(path string) error {
+func checkScriptSecurity(path string, _ bool) error {
 	return winsec.ValidateCapabilityScript(path)
 }
 
@@ -23,9 +23,14 @@ func checkScriptSecurity(path string) error {
 // installer — is the trust boundary; the walk deliberately does not climb
 // to the volume root, because the default %ProgramData% ACL lets any user
 // create files and would always fail.
-func requireSecureParentDir(target string) error {
+func requireSecureParentDir(target string, _ bool) error {
 	return winsec.RequireProtectedAncestry(target)
 }
+
+// requireTrustedFile is a no-op on Windows: certificate, key and config
+// protection is established by the installer's protected-DACL directory,
+// which requireSecureParentDir verifies.
+func requireTrustedFile(string, bool, bool) error { return nil }
 
 // rejectSymlink refuses a path whose final component is a reparse point
 // (symbolic link or directory junction), matching the unix behaviour: a

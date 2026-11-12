@@ -23,7 +23,21 @@ var (
 	ErrInvalidParameter = fmt.Errorf("invalid parameter")
 	ErrMissingParameter = fmt.Errorf("missing required parameter")
 	ErrActionBusy       = fmt.Errorf("action is already running (exclusive concurrency)")
+	// ErrTooManyJobs means the agent-wide cap on queued+running jobs
+	// (jobs.max_concurrent) has been reached. No job is created.
+	ErrTooManyJobs = fmt.Errorf("too many jobs are running; try again later")
+	// ErrShuttingDown means the agent is stopping and accepts no new jobs.
+	ErrShuttingDown = fmt.Errorf("agent is shutting down")
 )
+
+// DefaultMaxConcurrent is the agent-wide cap on queued+running jobs when the
+// caller doesn't set cfg.MaxConcurrentJobs (e.g. config built directly in
+// tests).
+const DefaultMaxConcurrent = 16
+
+// interruptedReason is recorded on jobs stopped because the agent is
+// shutting down.
+const interruptedReason = "interrupted: agent shutting down"
 
 // MaxOutputBytesDefault is used by callers (tests, mainly) that don't wire a
 // config-derived limit through NewManager's cfg argument.
@@ -49,8 +63,12 @@ type Manager struct {
 
 	maxOutputBytes int
 	maxHistory     int
+	maxConcurrent  int
 
 	mu       sync.Mutex
+	active   int            // queued+running jobs holding a slot; guarded by mu
+	stopping bool           // set by Shutdown; guarded by mu
+	running  sync.WaitGroup // one count per held slot
 	jobs     map[string]*Job
 	byInsert *list.List // list.Element.Value is a jobID (string), oldest at Front
 	elemOf   map[string]*list.Element
@@ -69,12 +87,17 @@ func NewManager(cfg *config.Config, auditLogger *audit.Logger, logger *slog.Logg
 	if maxHistory == 0 {
 		maxHistory = DefaultMaxJobHistory
 	}
+	maxConcurrent := cfg.MaxConcurrentJobs
+	if maxConcurrent == 0 {
+		maxConcurrent = DefaultMaxConcurrent
+	}
 	return &Manager{
 		cfg:            cfg,
 		audit:          auditLogger,
 		logger:         logger,
 		maxOutputBytes: maxOutputBytes,
 		maxHistory:     maxHistory,
+		maxConcurrent:  maxConcurrent,
 		jobs:           make(map[string]*Job),
 		byInsert:       list.New(),
 		elemOf:         make(map[string]*list.Element),
@@ -177,8 +200,33 @@ func buildEnv(jobID, actionName string, params map[string]string) []string {
 	return env
 }
 
+// acquireSlot reserves one of the agent-wide job slots. Every successful
+// call must be paired with exactly one releaseSlot.
+func (m *Manager) acquireSlot() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopping {
+		return ErrShuttingDown
+	}
+	if m.active >= m.maxConcurrent {
+		return ErrTooManyJobs
+	}
+	m.active++
+	m.running.Add(1)
+	return nil
+}
+
+func (m *Manager) releaseSlot() {
+	m.mu.Lock()
+	m.active--
+	m.mu.Unlock()
+	m.running.Done()
+}
+
 // Trigger validates and starts an action on behalf of identity. It returns
-// the queued job immediately; execution happens asynchronously.
+// the queued job immediately; execution happens asynchronously. A rejected
+// trigger (busy, over the global cap, shutting down, audit unavailable)
+// creates no job and leaves no lock or slot held.
 func (m *Manager) Trigger(ctx context.Context, actionName, identity string, params map[string]string) (*Job, error) {
 	action, ok := m.cfg.Actions[actionName]
 	if !ok {
@@ -195,7 +243,18 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 			return nil, ErrActionBusy
 		}
 	}
+	unlockLock := func() {
+		if lock != nil {
+			lock.Unlock()
+		}
+	}
 
+	if err := m.acquireSlot(); err != nil {
+		unlockLock()
+		return nil, err
+	}
+
+	runCtx, cancel := context.WithCancel(context.Background())
 	job := &Job{
 		ID:          NewID(),
 		Action:      actionName,
@@ -203,6 +262,7 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 		Parameters:  params,
 		CreatedAt:   time.Now(),
 		status:      StatusQueued,
+		cancel:      cancel,
 	}
 
 	m.recordJob(job)
@@ -217,19 +277,73 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 		// The accept-audit write failed: we cannot guarantee traceability
 		// for this job, so refuse to start it rather than run an
 		// unaudited action.
-		if lock != nil {
-			lock.Unlock()
-		}
+		cancel()
 		m.removeJob(job.ID)
+		m.releaseSlot()
+		unlockLock()
 		return nil, fmt.Errorf("audit log unavailable, refusing to start job: %w", err)
 	}
 
-	runCtx, cancel := context.WithCancel(context.Background())
-	job.cancel = cancel
-
-	go m.run(runCtx, job, action, lock)
+	go m.run(runCtx, cancel, job, action, lock)
 
 	return job, nil
+}
+
+// Shutdown stops accepting new jobs, asks every running job to stop (the
+// executor terminates the whole process group), and waits for them to be
+// reaped and their final audit record written, until ctx expires. It returns
+// an error if jobs were still running when ctx expired. A crash, SIGKILL or
+// power loss skips this path entirely: those jobs then have no finished
+// record (see docs/THREAT-MODEL.md).
+func (m *Manager) Shutdown(ctx context.Context) error {
+	m.mu.Lock()
+	m.stopping = true
+	var live []*Job
+	for _, j := range m.jobs {
+		if !j.Snapshot().Status.terminal() {
+			live = append(live, j)
+		}
+	}
+	m.mu.Unlock()
+
+	for _, j := range live {
+		j.Cancel()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		m.running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("shutdown: jobs still running: %w", ctx.Err())
+	}
+}
+
+// finishWithoutRunning records a terminal state for a job whose script was
+// never executed.
+func (m *Manager) finishWithoutRunning(job *Job, status Status, reason string) {
+	job.setFinished(status, nil, reason)
+}
+
+// writeFinished emits the finished audit record. A failure is logged (the
+// job's outcome is already decided) and cannot be retried.
+func (m *Manager) writeFinished(job *Job, status Status, reason string) {
+	snap := job.Snapshot()
+	if err := m.audit.Write(audit.Record{
+		Event:      audit.EventFinished,
+		JobID:      job.ID,
+		Identity:   job.RequestedBy,
+		Action:     job.Action,
+		Result:     string(status),
+		Reason:     reason,
+		DurationMs: snap.DurationMs,
+	}); err != nil {
+		m.logger.Error("audit write failed for job completion", "job_id", job.ID, "error", err)
+	}
 }
 
 func (m *Manager) removeJob(jobID string) {
@@ -253,7 +367,13 @@ func (m *Manager) lockFor(action string) *sync.Mutex {
 	return l
 }
 
-func (m *Manager) run(ctx context.Context, job *Job, action *config.Action, lock *sync.Mutex) {
+func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, job *Job, action *config.Action, lock *sync.Mutex) {
+	// Whatever happens below, release the job's context, its global slot and
+	// (via unlock) its exclusive lock exactly once. Registered first so it
+	// runs last, after the final audit record is written.
+	defer m.releaseSlot()
+	defer cancel()
+
 	// The exclusive lock protects overlapping script executions, not the
 	// bookkeeping after execution finishes — release it as soon as the job
 	// reaches a terminal state so a subsequent trigger isn't blocked behind
@@ -289,15 +409,32 @@ func (m *Manager) run(ctx context.Context, job *Job, action *config.Action, lock
 		}
 	}()
 
-	job.setRunning()
+	// Stopped before it ever started (agent shutting down): record it, do not
+	// execute anything.
+	if ctx.Err() != nil {
+		m.finishWithoutRunning(job, StatusCancelled, interruptedReason)
+		unlock()
+		m.writeFinished(job, StatusCancelled, interruptedReason)
+		return
+	}
+
+	// The started record must be written before the script runs. If it cannot
+	// be, the action is not executed: an unaudited execution is worse than a
+	// failed job.
 	if err := m.audit.Write(audit.Record{
 		Event:    audit.EventStarted,
 		JobID:    job.ID,
 		Identity: job.RequestedBy,
 		Action:   job.Action,
 	}); err != nil {
-		m.logger.Error("audit write failed for job start", "job_id", job.ID, "error", err)
+		m.logger.Error("audit write failed for job start; action not executed", "job_id", job.ID, "error", err)
+		const reason = "audit log unavailable; action not started"
+		m.finishWithoutRunning(job, StatusFailed, reason)
+		unlock()
+		m.writeFinished(job, StatusFailed, reason)
+		return
 	}
+	job.setRunning()
 
 	env := buildEnv(job.ID, job.Action, job.Parameters)
 	result, execErr := executor.Run(ctx, executor.Spec{
@@ -317,6 +454,7 @@ func (m *Manager) run(ctx context.Context, job *Job, action *config.Action, lock
 		errMsg = execErr.Error()
 	case result.Cancelled:
 		status = StatusCancelled
+		errMsg = interruptedReason
 	case result.TimedOut:
 		status = StatusFailed
 		errMsg = fmt.Sprintf("action exceeded timeout of %s", action.Timeout)
@@ -339,17 +477,5 @@ func (m *Manager) run(ctx context.Context, job *Job, action *config.Action, lock
 
 	job.setFinished(status, exitCode, errMsg)
 	unlock()
-	snap := job.Snapshot()
-
-	if err := m.audit.Write(audit.Record{
-		Event:      audit.EventFinished,
-		JobID:      job.ID,
-		Identity:   job.RequestedBy,
-		Action:     job.Action,
-		Result:     string(status),
-		Reason:     errMsg,
-		DurationMs: snap.DurationMs,
-	}); err != nil {
-		m.logger.Error("audit write failed for job completion", "job_id", job.ID, "error", err)
-	}
+	m.writeFinished(job, status, errMsg)
 }

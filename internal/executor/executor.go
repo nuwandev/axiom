@@ -176,7 +176,16 @@ func Run(ctx context.Context, spec Spec) (*Result, error) {
 			// force-killed, on Windows).
 		case <-time.After(TerminationGracePeriod):
 			cont.kill(cmd)
-			<-waitErr // reap regardless; ignore the exit error from a killed process
+			// Reap, ignoring the exit error from a killed process. Bounded:
+			// a descendant that left the process group (setsid) can keep the
+			// stdout/stderr pipes open, and cmd.Wait would then never return,
+			// leaving the job running and its exclusive lock held. The Wait
+			// goroutine is abandoned in that case; the capped buffers are
+			// mutex-guarded so reading them below is safe.
+			select {
+			case <-waitErr:
+			case <-time.After(TerminationGracePeriod):
+			}
 		}
 	}
 

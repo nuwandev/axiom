@@ -19,7 +19,7 @@ be declined.
 
 ## Development
 
-Requires Go 1.23+. Linux (or other unix) is the primary development host;
+Requires Go 1.27.4+. Linux (or other unix) is the primary development host;
 the tree also builds and tests for `GOOS=windows`. Platform-specific code
 lives behind `//go:build unix` / `//go:build windows` files — keep shared
 logic out of them. See [`docs/development.md`](docs/development.md).
@@ -66,7 +66,8 @@ Pre-flight (do these before tagging; each has bitten a release before):
 - No AI attribution anywhere (commits, PR/release text, docs, code
   comments) — see the rule in `CLAUDE.md`.
 - RPM/checksum signing still works: the `AXIOM_GPG_PRIVATE_KEY` repo secret
-  is set and `verify RPM signatures` in the `build` job passes. See
+  is set and the `publish` job's `sign and verify release artifacts` step passes
+  (the `build` job never receives the key). See
   [`docs/verifying-downloads.md`](docs/verifying-downloads.md). If that key
   is ever rotated, update `GPG_KEY_ID` in `release.yml` and republish
   `packaging/rpm/axiom-signing-public.asc` and the fingerprint in that doc.

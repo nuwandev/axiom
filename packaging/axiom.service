@@ -67,11 +67,15 @@ ReadWritePaths=/var/log/axiom /var/lib/axiom
 PrivateTmp=true
 
 # No capabilities granted, none inherited, none permitted to be gained.
-# If a specific action genuinely needs a privileged operation (e.g.
-# restarting a system-level systemd unit, binding a low port), the
-# supported pattern is a narrowly-scoped, single-command NOPASSWD sudoers
-# rule invoked from inside that one action's script — not broadening this
-# unit's capability set for every action.
+# NoNewPrivileges=true above means sudo, su and any other setuid/setgid or
+# file-capability binary CANNOT raise privileges for this service or for
+# anything an action script starts, so a sudoers rule does not work from
+# inside an action. If an action genuinely needs a privileged operation
+# (e.g. restarting a system-level systemd unit), it needs a design that does
+# not rely on elevating inside this unit, for example a polkit rule scoped to
+# that one unit and verb, or a separate root-owned unit that performs one
+# fixed operation. Each must be validated on the target host. Do not weaken
+# NoNewPrivileges or widen this unit's capabilities for every action.
 CapabilityBoundingSet=
 AmbientCapabilities=
 
