@@ -1,10 +1,11 @@
 # Validating the audit path on a real Linux host
 
-Status: **not yet performed on a RHEL host.** The code is covered by unit
-tests and a test against a private Unix socket only (`internal/audit`).
-Nothing below has been run against a real journald or a real central
-collector; do not describe the forwarded audit path as verified until this
-procedure has been completed and its results recorded.
+Status: the journald path was verified on Rocky Linux 9.8 with v2.0.1:
+`accepted`, `started` and `finished` records arrive in journald with
+`_EXE=/usr/local/bin/axiom`, and a record forged with `logger` is
+distinguishable by its sender metadata. Run the procedure below against your
+own collector to confirm delivery and retention in your environment, and
+record the results.
 
 > **Local audit file: operational copy only.**
 > **Central collector: authoritative audit record.**

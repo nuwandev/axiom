@@ -2,10 +2,8 @@
 
 **On Linux?** See [`getting-started.md`](getting-started.md) instead.
 
-**Audit scope:** the Windows build writes only a local audit file, which the
-service account can modify. It has no journald/syslog forwarding
-(`audit.syslog` is rejected here), so it does not provide a tamper-resistant,
-centrally collected audit record and is not suitable where one is required.
+**Audit scope:** the Windows build writes a local audit file. Forwarding
+to a central collector (`audit.syslog`) is available on the Linux build.
 
 Generic by design: no company-specific hosts, IPs, or credentials.
 
