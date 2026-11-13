@@ -12,9 +12,10 @@ rebuild, real systemd as PID 1, real cgroups v2. Full end-to-end validation
 (install → certs → config → start → mTLS → job execution → concurrency →
 crash/restart → upgrade/rollback → uninstall) was run against this exact
 target; see `docs/THREAT-MODEL.md` for the security-focused findings from
-that pass. The one thing that environment could not exercise is SELinux
-*enforcing* mode — see §9a for what was and wasn't verified there and what
-you should check on your own enforcing host before going live.
+that pass. The v2.0.1 release was additionally run on a Rocky Linux 9.8
+VM with SELinux **enforcing** (RPM install, upgrade from and rollback to
+v1.2.1, mTLS, job execution, stop, uninstall) with no AVC denials; see §9a.
+Check your own enforcing host before going live.
 
 ---
 
@@ -223,7 +224,9 @@ sudo chmod 0640 /etc/axiom/certs/ca.crt /etc/axiom/certs/server.crt /etc/axiom/c
 ```
 
 Axiom validates all three at startup (existence, valid PEM, valid X.509 for
-the certs) and refuses to start otherwise.
+the certs) and refuses to start otherwise. It also refuses a key that other
+users can access (mode wider than `0640`), any of these files being
+group/world-writable, symlinked, or owned by anyone but root.
 
 **On `server.key`'s mode: 0640, not something tighter like 0600.** The
 `axiom` service account is a *group* member of `axiom`, not the file's
@@ -403,15 +406,22 @@ it cannot bind a privileged port (`<1024`) regardless of SELinux — the
 documented port (`8443`) is unreserved and unrestricted under the targeted
 policy.
 
-**What this guide could not verify directly:** live *enforcing*-mode
-behavior. The validation environment for this guide runs a kernel without
-the SELinux LSM compiled in at all (confirmed via `getenforce` reporting
-`Disabled` even with the policy packages installed, and no
-`/sys/fs/selinux`) — a limitation of that specific test host, not of
-Axiom or of RHEL. The static analysis above is real and uses RHEL's actual
-policy data, but it is not a substitute for seeing zero AVC denials on a
-genuine enforcing host. **Before a production rollout, on your actual
-SELinux-enforcing RHEL host:**
+**Verified live (v2.0.1):** on a Rocky Linux 9.8 VM (kernel 5.14,
+SELinux `Enforcing`, `targeted` policy), a full run of the published RPM
+produced zero AVC denials: install, upgrade from v1.2.1, mTLS, job
+execution with parameters, concurrency limits, audit writes (including a
+full audit filesystem), service stop with a running job, rollback and
+removal. The files carried the contexts in the table above and the service
+ran as `system_u:system_r:unconfined_service_t:s0`. Note what that means:
+without a dedicated policy module the service is not confined by SELinux,
+so its containment comes from the systemd sandbox (§9) and file
+permissions, not from SELinux. Earlier validation hosts (WSL2 kernels) had
+no SELinux at all, which is why the static policy-database analysis above
+is also kept.
+
+One enforcing-mode run on one host is not a guarantee for your host:
+local policy customizations can differ. **Before a production rollout, on
+your actual SELinux-enforcing RHEL host:**
 
 ```bash
 getenforce   # confirm Enforcing
@@ -459,7 +469,11 @@ curl --cacert ca.crt --cert client.crt --key client.key \
 
 Expect `{"status":"ok","agent":"<agent.id>","version":"..."}`. If
 `security.health.allow_anonymous` is `false` (the default), a request
-without a client certificate correctly gets `401`.
+without a client certificate is refused during the TLS handshake: curl
+reports a handshake or connection error (for example `tlsv13 alert
+certificate required`) and receives no HTTP status. With anonymous health
+enabled, only `/health` is served without a certificate and every other
+route answers `401`.
 
 ---
 
@@ -573,7 +587,9 @@ kept on disk by Axiom itself.
 | Symptom | Likely cause | Check |
 |---|---|---|
 | Service won't start, exits immediately | Config or security validation failure | `journalctl -u axiom -n 50` — the error names the exact field/path |
-| `401` on every request including with a valid cert | Client cert not signed by the CA in `security.mtls.ca_file`, or clock skew (cert not-yet-valid/expired) | `openssl verify -CAfile ca.crt client.crt` |
+| TLS handshake error (or `401` when anonymous health is enabled) on every request, including with a cert you expect to work | Client cert not signed by the CA in `security.mtls.ca_file`, missing the `clientAuth` extended key usage, or clock skew (cert not-yet-valid/expired) | `openssl verify -CAfile ca.crt -purpose sslclient client.crt` |
+| `404` on `GET /v1/jobs/{id}` for a job you just triggered | The poll used a different client identity than the trigger (job status and logs are owner-only), or Axiom restarted | Poll with the same certificate that triggered the job |
+| `429` on a trigger | The agent-wide limit of running jobs (`jobs.max_concurrent`, default 16) is reached | Retry after the `Retry-After` interval, or raise the limit |
 | `403` on a request you expect to succeed | Client cert's Common Name isn't listed under `authorization.identities`, or doesn't list that specific action | Check the CN with `openssl x509 -in client.crt -noout -subject`; check it against config |
 | `404` on `POST /v1/actions/{name}` | Action name doesn't exist in config, or path had disallowed characters | Check `actions:` in config |
 | `409` on a trigger | That action is `concurrency: exclusive` and already running | `GET /v1/jobs/{id}` on the in-flight job, or check the audit log |

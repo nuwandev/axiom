@@ -194,8 +194,13 @@ webhook/callback mechanism and none is planned (see the project's
 - `403` — this identity isn't allowlisted for this action. A config
   problem on Axiom's side, not something to retry.
 - `404` on trigger — the action name doesn't exist in that agent's config.
-  `404` on job lookup — either the job ID is wrong, or Axiom has restarted
-  since the job ran (see [job history and restarts](#job_id-and-what-a-lost-connection-means) below).
+  `404` on job lookup — the job ID is wrong, the job belongs to a different
+  client identity (status and logs are readable only by the certificate that
+  triggered the job, so poll with the same credential), or Axiom has
+  restarted since the job ran (see [job history and restarts](#job_id-and-what-a-lost-connection-means) below).
+- `429` — the agent-wide limit of running jobs (`jobs.max_concurrent`) is
+  reached and no job was created. Wait for `Retry-After` and retry; unlike a
+  lost trigger response, this is safe to retry.
 - `409` — an `exclusive`-concurrency action is already running. Depending
   on your pipeline's needs, either fail the build (simplest) or wait and
   retry after a delay — Axiom does not queue the request for you.

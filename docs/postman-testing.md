@@ -120,14 +120,17 @@ actually enforced on your specific config, not just documented.
 **Negative Tests → Nonexistent Action** expects `404` — proving there's no
 fallback/wildcard action, only exactly what's declared.
 
-**Negative Tests → Unauthenticated Request** expects `401`, but needs one
-manual extra step because of the Postman mTLS limitation in step 3: Postman
-attaches your client certificate to *every* request to that host, so there
-is no built-in way to send "this one request without a certificate."
-To actually run this test: temporarily remove or disable the certificate
-for your host in Settings → Certificates, send the request, confirm
-`401`, then **re-add the certificate** before continuing with the rest of
-the collection.
+**Negative Tests → Unauthenticated Request** needs one manual extra step
+because of the Postman mTLS limitation in step 3: Postman attaches your
+client certificate to *every* request to that host, so there is no built-in
+way to send "this one request without a certificate." To actually run this
+test: temporarily remove or disable the certificate for your host in
+Settings → Certificates, send the request, and confirm it is refused. By
+default the TLS handshake itself fails, so Postman shows an SSL/connection
+error and no HTTP status (the collection's test script only runs if a
+response arrives). If the agent has `security.health.allow_anonymous: true`,
+the handshake succeeds and the response is `401`. Then **re-add the
+certificate** before continuing with the rest of the collection.
 
 ## 9. Test invalid parameters
 

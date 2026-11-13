@@ -50,12 +50,21 @@ things and none of them substitutes for another:
   (a `--privileged --systemd=always` container works; see
   `scripts/rhel-test-*.sh` for the harness used).
 
+- **RPM lifecycle in CI** (`scripts/ci-rpm-lifecycle.sh`, run by the
+  `RPM package builds` job) — installs the published, signed v1.2.1 RPM in a
+  Rocky Linux 9 container, runs mTLS and `hello.world` against the unchanged
+  v1.2.1 config, upgrades to the candidate RPM, checks the ownership and
+  key-mode refusals, and rolls back. Containers have no init, so this does
+  not start the systemd unit.
+- **Pre-release host runs** — for each release the published artifacts are
+  also run on a real systemd host (the RHEL-family VM with SELinux enforcing,
+  and Windows 11 Pro); results are summarized in `INSTALL.md` §9a and the
+  validation documents.
+
 **Don't claim an environment is tested unless one of the above tiers
-actually covers it.** In particular: this project makes no claim about
-SELinux *enforcing*-mode behavior beyond a static policy-database review
-(see `INSTALL.md` §9a) unless that has genuinely been verified live on an
-enforcing host — check the current `THREAT-MODEL.md` for what's actually
-been confirmed before asserting otherwise in an issue or PR.
+actually covers it.** SELinux *enforcing* behavior was verified live on one
+Rocky Linux 9.8 host for v2.0.1 (zero denials; see `INSTALL.md` §9a); do not
+extend that to other hosts or policies without running it there.
 
 ## Windows
 
@@ -96,16 +105,21 @@ The Windows platform code has three test tiers of its own:
 
 GitHub Actions (`.github/workflows/ci.yml`) runs, on every push/PR:
 
-- a Linux job: `gofmt -l .`, `go build ./...`, `go vet ./...`,
-  `go test ./...`, `go test ./... -race`, then `GOOS=windows` build + vet;
-- a Windows job: `go build`, `go vet`, `go test ./...`.
+- a Linux job: `gofmt -l .`, `go mod verify`, `go build ./...`,
+  `go vet ./...`, `go test ./...`, `go test ./... -race`, `govulncheck`, then
+  a `GOOS=windows` cross-compile;
+- a Windows job: `go build`, `go vet`, `go test ./...`;
+- an RPM job: builds a throwaway RPM with nfpm and runs the RPM lifecycle
+  test above.
 
-CI does not run the RHEL or Windows Server 2022 host-validation tiers —
-those stay deliberate, manual, pre-release steps.
+The release workflow (`release.yml`) can be dry-run without publishing via
+`workflow_dispatch`; see `CONTRIBUTING.md` ("Cutting a release").
+
+CI does not run the real-host validation tiers (systemd-managed RHEL host,
+Windows Server 2022 / Windows 11 Pro) — those stay deliberate, manual,
+pre-release steps.
 
 CodeQL static analysis (`.github/workflows/codeql.yml.disabled`) is
-prepared but currently disabled: code scanning on a private repository
-requires GitHub Advanced Security, which isn't purchased for this
-account, and it's free on public repos with no config change needed. Once
-this repository is public, `git mv codeql.yml.disabled codeql.yml`
-re-enables it.
+prepared but not enabled. This repository is public, where code scanning is
+free: `git mv codeql.yml.disabled codeql.yml` enables it (not yet run, so
+check the first run's results before relying on it).

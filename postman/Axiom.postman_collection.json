@@ -227,7 +227,7 @@
               "host": ["{{base_url}}"],
               "path": ["v1", "jobs", "{{job_id}}"]
             },
-            "description": "Expect 401. Postman attaches a client certificate per-domain from Settings > Certificates, not per-request -- there is no in-collection way to send 'this one request without the cert'. To actually run this test, temporarily remove/disable the client certificate for this host in Postman's settings, run this request, then re-add the certificate before continuing with the rest of the collection. See docs/postman-testing.md for the exact steps -- this is the main Postman/mTLS limitation to be aware of."
+            "description": "Expect the request to be refused: by default the TLS handshake fails (Postman shows an SSL/connection error and no response); with security.health.allow_anonymous enabled the response is 401. Postman attaches a client certificate per-domain from Settings > Certificates, not per-request -- there is no in-collection way to send 'this one request without the cert'. To actually run this test, temporarily remove/disable the client certificate for this host in Postman's settings, run this request, then re-add the certificate before continuing with the rest of the collection. See docs/postman-testing.md for the exact steps -- this is the main Postman/mTLS limitation to be aware of."
           },
           "event": [
             {
@@ -235,6 +235,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// By default the handshake fails and no response arrives, so this script only runs",
+                  "// when anonymous health is enabled on the agent (HTTP layer answers 401).",
                   "pm.test('status is 401 when no client certificate is presented', function () {",
                   "    pm.response.to.have.status(401);",
                   "});"
