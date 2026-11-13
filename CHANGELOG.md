@@ -6,7 +6,9 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
-## [Unreleased]
+## [2.0.2] — 2026-11-13
+
+Patch release; no configuration or API changes.
 
 ### Added
 - A CycloneDX SBOM for the Linux and the Windows binary is published with every

@@ -123,10 +123,10 @@ systemd unit in one step, and gives you real upgrade/uninstall support
 (`dnf upgrade` / `dnf remove`) instead of a manual script:
 
 ```bash
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.1/axiom-2.0.1-1.x86_64.rpm
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.1/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.2/axiom-2.0.2-1.x86_64.rpm
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.2/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-sudo dnf install ./axiom-2.0.1-1.x86_64.rpm
+sudo dnf install ./axiom-2.0.2-1.x86_64.rpm
 ```
 
 (`aarch64` builds are published alongside the `x86_64` ones for arm64
@@ -156,21 +156,21 @@ a full checkout of this repository.
 
 ```bash
 # pick the asset matching your server's CPU
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.1/axiom-v2.0.1-linux-amd64
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.1/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.2/axiom-v2.0.2-linux-amd64
+curl -LO https://github.com/nuwandev/axiom/releases/download/v2.0.2/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-chmod +x axiom-v2.0.1-linux-amd64
+chmod +x axiom-v2.0.2-linux-amd64
 
 # the installer and systemd unit are small text files pulled directly from
 # the tagged release, not the whole repo
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.0.1/scripts/install.sh
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.0.1/packaging/axiom.service
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.0.2/scripts/install.sh
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.0.2/packaging/axiom.service
 chmod +x install.sh
 
 # SYSTEMD_UNIT_SRC is required here: install.sh's default path assumes it's
 # still sitting inside the repo's scripts/ directory next to a sibling
 # packaging/ directory, which isn't true for a standalone download like this.
-sudo BIN_SRC=./axiom-v2.0.1-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
+sudo BIN_SRC=./axiom-v2.0.2-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
 ```
 
 Always verify the checksum (`sha256sum -c`) before running anything you
@@ -259,7 +259,7 @@ which client identities may call which actions.
 sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yaml
 
 # or, on a server with no checkout (matches §4a):
-curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom/v2.0.1/configs/example.yaml
+curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom/v2.0.2/configs/example.yaml
 sudo install -o root -g axiom -m 0640 config.yaml /etc/axiom/config.yaml
 
 sudo vi /etc/axiom/config.yaml
