@@ -1,0 +1,51 @@
+name: CodeQL
+
+# Static analysis (security-extended query suite) on every push to main, every
+# pull request, and weekly. The Go code is analysed twice, once per target OS,
+# so the Windows-only files (internal/winsec, *_windows.go) are covered too.
+# Findings appear under Security > Code scanning.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (go, ${{ matrix.goos }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload results to code scanning
+      actions: read          # codeql-action/analyze reads workflow-run status
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, windows]
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27.4"
+
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: go
+          build-mode: manual
+          queries: security-extended
+
+      - name: build
+        run: GOOS=${{ matrix.goos }} go build ./...
+
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: "/language:go/os:${{ matrix.goos }}"

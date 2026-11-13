@@ -6,6 +6,22 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [Unreleased]
+
+### Added
+- A CycloneDX SBOM for the Linux and the Windows binary is published with every
+  release, covered by `SHA256SUMS`, its signature and the build-provenance
+  attestation (`axiom-<version>-<target>.sbom.cdx.json`).
+- CodeQL code scanning (`security-extended`) on every push to `main`, every
+  pull request and weekly, for both the Linux and the Windows code.
+
+### Changed
+- `golang.org/x/sys` updated from v0.30.0 to v0.49.0 (Windows service and ACL
+  code; not linked into the Linux binary).
+- README and guides reorganised around what the agent enforces; the guides
+  now describe the handshake-level client-certificate requirement, owner-only
+  job access and the job limit consistently.
+
 ## [2.0.1] — 2026-11-13
 
 Patch release; no configuration or API changes.

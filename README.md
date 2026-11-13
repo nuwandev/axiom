@@ -37,7 +37,7 @@ depends on a client behaving well.
 | **Audit that fails closed** | `accepted`, `started`, `finished` and `rejected` events are recorded, secret-looking values are redacted, and an action does not run if its accept or start record cannot be written. Linux can also forward every record to journald/syslog for a central collector. |
 | **Contained process** | Dedicated unprivileged account in a systemd sandbox (no capabilities, `NoNewPrivileges`, read-only filesystem except its log and state directories). On Windows: `NT SERVICE\axiom` virtual account, NTFS ACL checks, Job Object containment. |
 | **Small attack surface** | One static binary with two third-party modules (`yaml.v3`, `golang.org/x/sys`), four HTTP routes, no shell, no database, and no outbound network connections. |
-| **Verifiable releases** | Built in GitHub Actions with commit-pinned actions and an exact Go toolchain, `govulncheck` in CI, GPG-signed `SHA256SUMS` and RPMs, and SLSA build provenance. The signing key is available only to the publish job, and a real release fails without it. See [`docs/verifying-downloads.md`](docs/verifying-downloads.md). |
+| **Verifiable releases** | Built in GitHub Actions with commit-pinned actions and an exact Go toolchain, `govulncheck` and CodeQL code scanning (Linux and Windows code) in CI, GPG-signed `SHA256SUMS` and RPMs, SLSA build provenance, and a CycloneDX SBOM for the Linux and Windows binaries. The signing key is available only to the publish job, and a real release fails without it. See [`docs/verifying-downloads.md`](docs/verifying-downloads.md). |
 
 **How this is checked.** Unit and integration tests cover each rule above,
 including negative cases (no certificate, untrusted CA, expired or
@@ -383,7 +383,6 @@ shipped. Windows Server 2022 and Windows 11 Pro real-host validation:
 
 ## Roadmap
 
-- A release SBOM and CodeQL code scanning in CI.
 - Broader Linux distribution validation (Ubuntu/Debian) alongside the
   RHEL-family matrix.
 - A thin CI integration (for example a Jenkins shared library) wrapping the
