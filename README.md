@@ -1,7 +1,7 @@
 # Axiom: mTLS Server Automation Agent
 
-Axiom is a secure server-side automation agent for Linux and Windows
-Server: a small, mutually-authenticated (mTLS) HTTPS API that lets a
+Axiom is a small server-side automation agent for Linux and Windows
+Server: a mutually-authenticated (mTLS) HTTPS API that lets a
 trusted system — a CI/CD controller, an internal automation tool — trigger
 predefined, server-local actions as a safer alternative to giving it SSH
 access. You configure what each action does — deploy, rollback, restart,
@@ -19,6 +19,41 @@ deploy script" also grants everything else a shell can do. Axiom narrows
 that down to exactly what's needed: a small, authenticated HTTP API that
 can trigger only a fixed, server-defined set of named actions — nothing
 else is reachable through it, ever.
+
+## Security at a glance
+
+What the agent enforces, and where each property is exercised. Nothing here
+depends on a client behaving well.
+
+| Property | How it is enforced |
+|---|---|
+| **Mutual TLS, no tokens** | A client certificate signed by your CA is required during the TLS handshake (TLS 1.2+, forward-secret AEAD suites only), and the chain and `clientAuth` key usage are verified again on every request. Anonymous `/health` is off unless you enable it. |
+| **Default-deny authorization** | Each certificate identity has an explicit list of allowed actions. Unlisted identity or action: rejected. |
+| **Job isolation** | A job's status and output are readable only by the identity that triggered it; anyone else gets the same `404` as for an unknown id. |
+| **No arbitrary execution** | Only actions declared in config can run. Scripts are executed directly (no shell) with a fixed minimal `PATH`; the agent's own environment is not inherited. |
+| **Validated parameters** | Each parameter must declare a pattern, matched against the whole value, and arrives only as an `AXIOM_PARAM_*` environment variable. Body size, parameter count and value length are capped. |
+| **Integrity of what runs** | At startup the config, CA, server certificate and key, and every action script (and their parent directories) must be root-owned and not writable by others, with no symlinks; the private key must not be readable by other users. Otherwise the agent refuses to start. |
+| **Bounded resources** | Per-action timeouts kill the whole process tree; output is size-capped; `jobs.max_concurrent` caps running jobs (`429` beyond it); exclusive actions cannot overlap. |
+| **Audit that fails closed** | `accepted`, `started`, `finished` and `rejected` events are recorded, secret-looking values are redacted, and an action does not run if its accept or start record cannot be written. Linux can also forward every record to journald/syslog for a central collector. |
+| **Contained process** | Dedicated unprivileged account in a systemd sandbox (no capabilities, `NoNewPrivileges`, read-only filesystem except its log and state directories). On Windows: `NT SERVICE\axiom` virtual account, NTFS ACL checks, Job Object containment. |
+| **Verifiable releases** | Built in GitHub Actions with commit-pinned actions and an exact Go toolchain, `govulncheck` in CI, GPG-signed `SHA256SUMS` and RPMs, and SLSA build provenance. The signing key is available only to the publish job, and a real release fails without it. See [`docs/verifying-downloads.md`](docs/verifying-downloads.md). |
+
+**How this is checked.** Unit and integration tests cover each rule above,
+including negative cases (no certificate, untrusted CA, expired or
+wrong-usage certificate, cross-identity job reads, injection-style
+parameters, oversized requests, audit failure). Releases are also run on
+real hosts: Rocky Linux 9.8 with SELinux enforcing (no denials) and
+Windows 11 Pro, covering install, upgrade from v1.2.1, rollback and clean
+stop. See [`docs/development.md`](docs/development.md) for how the test
+layers are split.
+
+**What it does not do.** No certificate revocation (use short-lived,
+per-pipeline certificates and remove an identity from the config to cut it
+off); the local audit file is not tamper-proof, so use the syslog sink and a
+central collector where an audit record is required; a configured script
+runs as the service account, so what it can reach is up to you (Docker
+access, for instance, is root-equivalent); no request rate limiting. See
+[`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for the full analysis.
 
 ## How it works
 
@@ -265,7 +300,7 @@ curl --cacert ca.crt --cert client.crt --key client.key \
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/v1/actions/{action}` | Trigger a configured action. Optional JSON body: `{"parameters": {...}}`. Returns `202` + `{job_id, status}`, or `400`/`403`/`404`/`409` on rejection. |
+| `POST` | `/v1/actions/{action}` | Trigger a configured action. Optional JSON body: `{"parameters": {...}}`. Returns `202` + `{job_id, status}`, or `400`/`403`/`404`/`409`/`429` on rejection (`429`: the agent-wide job limit is reached). |
 | `GET` | `/v1/jobs/{job_id}` | Job status/result. Visible only to the identity that triggered the job; `404` if unknown, owned by another identity, or the agent has since restarted. |
 | `GET` | `/v1/jobs/{job_id}/logs` | Captured, size-bounded stdout/stderr. Same owner-only visibility as the job itself. |
 | `GET` | `/health` | Agent health. Authenticated by default (a client certificate is required at the TLS handshake); anonymous access is an explicit opt-in per agent. |
@@ -275,22 +310,13 @@ command, by design.
 
 ## Security notes
 
-- **Not a remote shell.** No endpoint executes arbitrary input — see
-  [Why predefined actions](#why-predefined-actions-not-arbitrary-commands).
-- **Default-deny authorization**, mTLS-only authentication, parameters
-  validated against a declared schema before an action ever runs.
-- **Least-privilege by construction**: the agent runs as a dedicated,
-  unprivileged account inside a hardened systemd sandbox; it cannot modify
-  its own binary, config, certificates, or action scripts.
-- **Every request is audited** (accepted/started/finished/rejected) to an
-  append-only, synchronously-flushed log with sensitive values redacted.
 - **Certificates are external.** Axiom loads and verifies; it never issues,
   renews, or rotates. See [`docs/certificates.md`](docs/certificates.md)
-  for the lifecycle boundary and a safe renewal flow (restart required —
-  there's no hot-reload).
-- Full threat-model write-up, including what's explicitly out of scope and
-  why: [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md). Report
-  vulnerabilities per [`SECURITY.md`](SECURITY.md), not as a public issue.
+  for the lifecycle boundary, a safe renewal flow (restart required, no
+  hot-reload) and what to do if a client certificate is compromised.
+- Full threat model, including what is explicitly out of scope and why:
+  [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md). Report vulnerabilities per
+  [`SECURITY.md`](SECURITY.md), not as a public issue.
 
 ## Development / testing
 
@@ -320,10 +346,10 @@ table separates **what this implementation supports architecturally** from
 
 | OS | Implementation support | Validated |
 |---|---|---|
-| RHEL-family Linux (RHEL, Rocky, Alma, CentOS Stream), systemd-managed | Yes — static binary, no distro-specific dependency beyond `systemd` | **Rocky Linux 9**, full end-to-end (install → mTLS → job execution → concurrency → crash/restart → upgrade/rollback → uninstall; see `docs/THREAT-MODEL.md`) |
-| Other systemd-based Linux (Ubuntu, Debian and derivatives) | Yes — same static binary and unit file layout; no RHEL-specific code path exists | Not yet run; expected to work, not validated |
+| RHEL-family Linux (RHEL, Rocky, Alma, CentOS Stream), systemd-managed | Yes: static binary, no distro-specific dependency beyond `systemd` | **Rocky Linux 9.8, SELinux enforcing**, v2.0.1: RPM install, upgrade from and rollback to v1.2.1, mTLS, job execution, concurrency limit, clean stop, uninstall (no SELinux denials; the service runs as `unconfined_service_t`, so containment comes from the systemd sandbox, not SELinux). Earlier releases were validated end to end on Rocky Linux 9 (see `docs/THREAT-MODEL.md`) |
+| Other systemd-based Linux (Ubuntu, Debian and derivatives) | Yes: same static binary and unit file layout; no RHEL-specific code path exists | Exercised on Debian 13 under systemd (v2.0.x RPM); not part of the validated matrix |
 | Windows Server 2016 / 2019 / 2022 / 2025 | Yes — service account model (`NT SERVICE\*` virtual accounts), Job Objects, and `icacls`/`takeown.exe` are all available since Windows Server 2008 R2, well below this project's Go-toolchain floor of Windows Server 2016/Windows 10 (Go 1.21+ does not run on anything older); capability scripts always run under the Windows PowerShell 5.1 that ships by default on every supported release, independent of whether PowerShell 7 is also installed | **Windows Server 2022**, full end-to-end real-host pass (install → ACLs → service start → mTLS → SCM recovery → bad-config diagnostics → least-privilege → uninstall; see [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md)) |
-| Windows 10 / 11 Pro (or any edition with Services + PowerShell, i.e. all of them) | Yes — nothing in the code checks for or depends on "Server" edition specifically; the service, ACL, and PowerShell-invocation logic is edition-agnostic | **Windows 11 Pro**, full end-to-end real-host pass identical in scope to the Windows Server run above. Found and fixed the one real Server-vs-Pro difference in the process: Windows 10/11 Pro's out-of-box PowerShell execution policy (`Restricted`) blocked every capability script until `internal/executor/launch_windows.go` was updated to invoke scripts with `-ExecutionPolicy Bypass` (scoped to that one fixed, ACL-protected invocation only — see `docs/windows-security.md`); re-validated clean afterward with the host's policy never touched. |
+| Windows 10 / 11 Pro (any edition with Services + PowerShell) | Yes: nothing depends on the "Server" edition | **Windows 11 Pro**, v2.0.1 MSI: service install and ACLs, mTLS, job execution, upgrade from the v1.2.1 MSI, rollback, clean stop. Windows 10/11's default PowerShell execution policy is handled by invoking each capability script with `-ExecutionPolicy Bypass` for that one fixed, ACL-protected invocation; the host policy is never changed (see [`docs/windows-security.md`](docs/windows-security.md)) |
 | Windows 7 / 8.1 / Server 2008 R2 / 2012 / 2012 R2 | **No** — the Go toolchain this project builds with (1.27) does not support running on these at all (Go dropped them in 1.21), independent of anything Axiom-specific | N/A |
 
 See [`docs/INSTALL-WINDOWS.md`](docs/INSTALL-WINDOWS.md) and
@@ -333,43 +359,41 @@ a native service on the host OS.
 
 ## Current status
 
-1.0 — the API surface, config schema, and security model are stable.
-Validated end-to-end on a real RHEL-family host (install → mTLS → job
-execution → concurrency → crash/restart → upgrade/rollback → uninstall;
-see [`THREAT-MODEL.md`](docs/THREAT-MODEL.md)) before the initial release.
-Windows Server 2022 support is implemented behind the same contract, tested
-in CI (Linux cross-compile + a Windows runner), and has passed real-host
-validation — see
+Current release: **v2.0.1**. The API surface and config schema are stable
+within 2.x. 2.0 tightened several defaults (mandatory parameter patterns,
+handshake-level client certificates, owner-only job access, root-owned
+files); if you are upgrading from 1.x, read the breaking changes and
+migration steps in [`CHANGELOG.md`](CHANGELOG.md) and
+[`docs/INSTALL.md`](docs/INSTALL.md#14-rollback) first. A v1.2.1 example
+config starts unchanged under 2.x when it meets those requirements.
+
+See [Releases](https://github.com/nuwandev/axiom/releases) for what has
+shipped. Windows Server 2022 and Windows 11 Pro real-host validation:
 [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md).
-See
-[Releases](https://github.com/nuwandev/axiom/releases) for what's shipped
-and [CHANGELOG](CHANGELOG.md) for what changed.
 
 **Known gaps, stated plainly:**
 - The Windows `.exe`/`.msi` are not Authenticode-signed, so Windows
   SmartScreen will warn on first run. RPMs and `SHA256SUMS` *are*
-  GPG-signed — see [docs/verifying-downloads.md](docs/verifying-downloads.md).
+  GPG-signed and releases carry build provenance; see
+  [docs/verifying-downloads.md](docs/verifying-downloads.md).
+- Audit forwarding to a central collector has been checked against
+  journald only; validate your own collector with
+  [`docs/audit-validation.md`](docs/audit-validation.md).
+- No certificate revocation; see [`docs/certificates.md`](docs/certificates.md).
 - No third-party antivirus/EDR interoperability testing has been done.
 - The Docker/Kubernetes success path (an action that drives a container
-  runtime) is implemented but untested end-to-end.
-- Ubuntu/Debian are not yet in the validated matrix (RHEL-family only).
+  runtime) is implemented but untested end to end.
 
 ## Roadmap
 
 - Broader Linux distribution validation (Ubuntu/Debian) alongside the
-  current RHEL-family matrix.
-- Windows Server 2022 support has landed (native service, PowerShell
-  capability execution, Job Object containment, NTFS ACL integrity checks —
-  see [`docs/INSTALL-WINDOWS.md`](docs/INSTALL-WINDOWS.md)) and has passed
-  full real-host validation — see
-  [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md).
-- A thin CI system integration (e.g. a Jenkins shared library) that wraps
-  the raw HTTP flow documented in
-  [`docs/jenkins-integration.md`](docs/jenkins-integration.md) — that
-  guide exists now; the packaged wrapper doesn't yet.
+  RHEL-family matrix.
+- A thin CI integration (for example a Jenkins shared library) wrapping the
+  HTTP flow in [`docs/jenkins-integration.md`](docs/jenkins-integration.md);
+  the guide exists, the packaged wrapper does not.
 
 None of these are commitments to add architecture the current design
-deliberately excludes — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for what's
+deliberately excludes; see [`CONTRIBUTING.md`](CONTRIBUTING.md) for what is
 out of scope.
 
 ## Author

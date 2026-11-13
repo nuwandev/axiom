@@ -316,8 +316,10 @@ curl.exe --cacert ca.crt --cert client.crt --key client.key `
 # {"status":"ok","agent":"<agent.id>","version":"..."}
 ```
 
-A request without a client certificate correctly gets `401` unless
-`security.health.allow_anonymous` is `true`.
+A request without a client certificate is refused during the TLS
+handshake (no HTTP status) unless `security.health.allow_anonymous` is
+`true`, in which case only `/health` is served without one and every other
+route answers `401`.
 
 ---
 
@@ -331,7 +333,9 @@ A request without a client certificate correctly gets `401` unless
 | startup error `PowerShell interpreter integrity` | `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` is missing or has a non-standard ACL |
 | startup error naming `Group Policy enforces... execution policy` | a domain or local **Group Policy** (not a local `Set-ExecutionPolicy`) enforces `Restricted` or `AllSigned` machine-wide — this is the one execution-policy case Axiom cannot work around on its own (Axiom's own invocation always uses `-ExecutionPolicy Bypass`, but real Group Policy always overrides that, by design). Ask your Windows administrator to allow `RemoteSigned` via GPO, or Authenticode-sign your capability scripts if the GPO is `AllSigned`. See `docs/windows-security.md`. |
 | job stuck `running` past its timeout | should self-resolve; the Job Object is terminated at the deadline — if not, check `axiom.log` for executor errors |
-| `401` on every request, including with a cert you expect to work | client cert not signed by the CA in `security.mtls.ca_file`, or clock skew (not-yet-valid/expired) — `openssl verify -CAfile ca.crt client.crt` |
+| TLS handshake error (or `401` when anonymous health is enabled) on every request, including with a cert you expect to work | client cert not signed by the CA in `security.mtls.ca_file`, missing the `clientAuth` extended key usage, or clock skew (not-yet-valid/expired) — `openssl verify -CAfile ca.crt -purpose sslclient client.crt` |
+| `404` on `GET /v1/jobs/{id}` for a job you just triggered | the poll used a different client identity than the trigger (job status and logs are owner-only), or the service restarted |
+| `429` on a trigger | the agent-wide limit of running jobs (`jobs.max_concurrent`, default 16) is reached — retry after `Retry-After`, or raise the limit |
 | `403` on a request you expect to work | client cert CN not listed under `authorization.identities`, or not for that action — `certutil -dump client.crt` for the CN |
 | `404` on `POST /v1/actions/{name}` | action name doesn't exist in config, or the name had disallowed characters — check `actions:` in `config.yaml` |
 | `409` on a trigger | that action is `concurrency: exclusive` and already running — `GET /v1/jobs/{id}` on the in-flight job, or check `audit.log` |
