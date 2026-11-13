@@ -42,13 +42,16 @@ welcome so it can be tracked and updated).
 
 ## Supported versions
 
-Security fixes are made against the latest released version. See
+Security fixes are made against the latest 2.x release. See
 [Releases](https://github.com/nuwandev/axiom/releases) for what's current.
+1.x does not receive fixes; upgrade using the migration notes in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Verifying a release
 
 Every release's `SHA256SUMS` is GPG-signed, and RPMs are individually
-signed, by a dedicated release-signing key kept only in GitHub Actions —
+signed, by a dedicated release-signing key kept only in GitHub Actions and
+available only to the publish job; releases also carry build provenance —
 see [docs/verifying-downloads.md](docs/verifying-downloads.md) for the
 fingerprint and verification steps. Binaries and the Windows MSI are not
 currently Authenticode-signed; see the README's known-gaps note.

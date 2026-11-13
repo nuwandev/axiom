@@ -547,7 +547,7 @@ sudo cp /usr/local/bin/axiom.previous /usr/local/bin/axiom
 sudo systemctl start axiom
 ```
 
-Rolling back from v2.0.0 to v1.2.1 also needs the configuration put back:
+Rolling back from v2.x to v1.2.1 also needs the configuration put back:
 v1.2.1 rejects unknown keys, so a v2.0.0 config containing any of
 `audit.syslog`, `jobs.max_concurrent` or `security.allow_service_owned_files`
 makes v1.2.1 refuse to start (verified with a v1.2.1 binary built from the
