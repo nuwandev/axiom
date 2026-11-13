@@ -89,7 +89,8 @@ Pre-flight (do these before tagging; each has bitten a release before):
    - The dry run described above builds everything and uploads it as a
      workflow run artifact instead of a GitHub Release.
 5. After it finishes, verify the Release page: all files present
-   (2 RPMs, 2 Linux binaries, Windows exe/zip/msi, `SHA256SUMS`), checksums
+   (2 RPMs, 2 Linux binaries, Windows exe/zip/msi, `SHA256SUMS` and its
+   `.asc`, `build-info`, and the two `*.sbom.cdx.json` SBOMs), checksums
    cover every file, notes are the CHANGELOG section. A green run alone is
    not proof the release is correct.
 

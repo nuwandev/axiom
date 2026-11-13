@@ -119,7 +119,7 @@ CI does not run the real-host validation tiers (systemd-managed RHEL host,
 Windows Server 2022 / Windows 11 Pro) — those stay deliberate, manual,
 pre-release steps.
 
-CodeQL static analysis (`.github/workflows/codeql.yml.disabled`) is
-prepared but not enabled. This repository is public, where code scanning is
-free: `git mv codeql.yml.disabled codeql.yml` enables it (not yet run, so
-check the first run's results before relying on it).
+CodeQL static analysis (`.github/workflows/codeql.yml`, `security-extended`
+queries) runs on every push to `main`, every pull request and weekly. The Go
+code is analysed once per target OS (Linux and Windows) so the Windows-only
+files are covered. Results appear under Security > Code scanning.

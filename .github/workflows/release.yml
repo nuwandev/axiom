@@ -95,6 +95,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends rpm gettext-base zip
 
+      # SBOM generator, pinned to an exact version; the module and its
+      # dependencies are verified against the Go checksum database. It reads
+      # the finished binary's embedded module list, so the SBOM describes the
+      # artifact that is published.
+      - name: install SBOM generator
+        run: go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0
+
       - name: go vet / test (release must build clean)
         run: |
           go vet ./...
@@ -104,6 +111,16 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: bash scripts/build-release.sh
+
+      - name: require the SBOMs
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          for target in linux-amd64 windows-amd64; do
+            sbom="dist/${VERSION}/axiom-${VERSION}-${target}.sbom.cdx.json"
+            test -s "$sbom"
+            python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["bomFormat"]=="CycloneDX"; print(sys.argv[1], "ok:", [c["name"] for c in d.get("components",[])])' "$sbom"
+          done
 
       - name: upload linux/windows artifacts for the MSI and publish jobs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

@@ -51,6 +51,17 @@ gh attestation verify axiom-v2.0.1-linux-amd64 -R nuwandev/axiom
 It confirms the file was produced by this repository's `release.yml`
 workflow from the release tag.
 
+## Software bill of materials (SBOM)
+
+Each release includes a CycloneDX JSON SBOM for the Linux and the Windows
+binary (`axiom-<version>-linux-amd64.sbom.cdx.json`,
+`axiom-<version>-windows-amd64.sbom.cdx.json`). They are generated from the
+finished binaries' embedded module lists, so they describe exactly what was
+published (the Windows build also links `golang.org/x/sys`). Like every other
+release file they are covered by `SHA256SUMS` (and so by its signature) and by
+the build-provenance attestation. Feed them to any CycloneDX-aware tool, for
+example to match the listed modules against a vulnerability database.
+
 ## How signing is enforced
 
 Signing happens in the release workflow's `publish` job only

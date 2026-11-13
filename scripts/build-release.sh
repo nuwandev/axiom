@@ -135,6 +135,22 @@ echo "recording build info..."
   go version -m "${OUT_DIR}/axiom-${VERSION}-linux-amd64"
 } > "${OUT_DIR}/axiom-${VERSION}-build-info.txt"
 
+# CycloneDX SBOMs of the exact published binaries (each one's embedded module
+# list; the Windows build links golang.org/x/sys, the Linux build does not).
+# The release workflow installs cyclonedx-gomod and requires these files; a
+# local build without the tool skips them with a warning.
+if command -v cyclonedx-gomod >/dev/null 2>&1; then
+  echo "generating SBOMs..."
+  for target in linux-amd64 windows-amd64.exe; do
+    bin="${OUT_DIR}/axiom-${VERSION}-${target}"
+    [[ -f "$bin" ]] || continue
+    chmod +x "$bin"
+    cyclonedx-gomod bin -json -version "${VERSION}"       -output "${OUT_DIR}/axiom-${VERSION}-${target%.exe}.sbom.cdx.json" "$bin"
+  done
+else
+  echo "WARNING: cyclonedx-gomod not found; no SBOMs generated (the release workflow requires them)." >&2
+fi
+
 echo "generating checksums..."
 (
   cd "$OUT_DIR"
