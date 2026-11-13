@@ -47,29 +47,24 @@ could be toggled.
 - **Job visibility**: a job's status and logs are readable only by the
   identity that triggered it.
 
-## What Axiom does not protect against
+## Scope and operational guidance
 
-Stated plainly, not glossed over:
-
-- **What a configured action script itself does.** Axiom has zero
-  visibility into or responsibility for action script content — that's a
-  deliberate architectural boundary (see [`actions.md`](actions.md)). A
-  script that is itself malicious or badly written is outside what an
-  execution agent can protect against; least-privilege installation
-  (root-owned, reviewed scripts) is the relevant control.
-- **In-flight job tracking across a restart.** Job status/logs are
-  in-memory only; a restart loses them. The audit log is the durable
-  record — see [`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior).
-- **Request replay** has no dedicated nonce/timestamp defense — mitigated
-  by mTLS channel security, exclusive-concurrency locking, and full
-  audit visibility, not eliminated. See `THREAT-MODEL.md` §8 for the full
-  reasoning.
+- **Action scripts are yours.** Axiom executes a script exactly as written
+  and cannot see into it, which is a deliberate boundary (see
+  [`actions.md`](actions.md)). Keep scripts root-owned and reviewed, and give
+  each one only the access it needs.
+- **Job history is in memory.** Job status and logs are not kept across a
+  restart; the audit log is the durable record (see
+  [`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior)).
+- **Replay.** Requests have no nonce or timestamp; mTLS channel security,
+  exclusive-concurrency locking and full audit visibility cover this (see
+  `THREAT-MODEL.md` §8).
 
 ## Full threat model
 
 [`THREAT-MODEL.md`](THREAT-MODEL.md) works through each of these attacker
 positions with the specific control that limits it and, where relevant,
-the residual risk stated honestly: an unauthenticated remote attacker, an
+the residual risk: an unauthenticated remote attacker, an
 attacker with an untrusted or unauthorized client certificate, a
 compromised CI credential or CI controller, a low-privilege local Linux
 user, a malicious or misconfigured action script, malformed/replayed/

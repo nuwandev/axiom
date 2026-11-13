@@ -36,6 +36,7 @@ depends on a client behaving well.
 | **Bounded resources** | Per-action timeouts kill the whole process tree; output is size-capped; `jobs.max_concurrent` caps running jobs (`429` beyond it); exclusive actions cannot overlap. |
 | **Audit that fails closed** | `accepted`, `started`, `finished` and `rejected` events are recorded, secret-looking values are redacted, and an action does not run if its accept or start record cannot be written. Linux can also forward every record to journald/syslog for a central collector. |
 | **Contained process** | Dedicated unprivileged account in a systemd sandbox (no capabilities, `NoNewPrivileges`, read-only filesystem except its log and state directories). On Windows: `NT SERVICE\axiom` virtual account, NTFS ACL checks, Job Object containment. |
+| **Small attack surface** | One static binary with two third-party modules (`yaml.v3`, `golang.org/x/sys`), four HTTP routes, no shell, no database, and no outbound network connections. |
 | **Verifiable releases** | Built in GitHub Actions with commit-pinned actions and an exact Go toolchain, `govulncheck` in CI, GPG-signed `SHA256SUMS` and RPMs, and SLSA build provenance. The signing key is available only to the publish job, and a real release fails without it. See [`docs/verifying-downloads.md`](docs/verifying-downloads.md). |
 
 **How this is checked.** Unit and integration tests cover each rule above,
@@ -47,13 +48,13 @@ Windows 11 Pro, covering install, upgrade from v1.2.1, rollback and clean
 stop. See [`docs/development.md`](docs/development.md) for how the test
 layers are split.
 
-**What it does not do.** No certificate revocation (use short-lived,
-per-pipeline certificates and remove an identity from the config to cut it
-off); the local audit file is not tamper-proof, so use the syslog sink and a
-central collector where an audit record is required; a configured script
-runs as the service account, so what it can reach is up to you (Docker
-access, for instance, is root-equivalent); no request rate limiting. See
-[`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for the full analysis.
+**Operating notes.** Callers authenticate with certificates from your own
+CA, so short-lived, per-pipeline certificates (and removing an identity from
+the config to cut it off) are the way to manage a credential's lifetime.
+Actions run as the service account, so give each one only the access it
+needs. For a centrally retained audit record, forward to your collector with
+the syslog sink. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for the
+full analysis.
 
 ## How it works
 
@@ -371,21 +372,18 @@ See [Releases](https://github.com/nuwandev/axiom/releases) for what has
 shipped. Windows Server 2022 and Windows 11 Pro real-host validation:
 [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md).
 
-**Known gaps, stated plainly:**
-- The Windows `.exe`/`.msi` are not Authenticode-signed, so Windows
-  SmartScreen will warn on first run. RPMs and `SHA256SUMS` *are*
-  GPG-signed and releases carry build provenance; see
-  [docs/verifying-downloads.md](docs/verifying-downloads.md).
-- Audit forwarding to a central collector has been checked against
-  journald only; validate your own collector with
-  [`docs/audit-validation.md`](docs/audit-validation.md).
-- No certificate revocation; see [`docs/certificates.md`](docs/certificates.md).
-- No third-party antivirus/EDR interoperability testing has been done.
-- The Docker/Kubernetes success path (an action that drives a container
-  runtime) is implemented but untested end to end.
+**Scope notes:**
+- The Windows `.exe`/`.msi` are not Authenticode-signed, so SmartScreen
+  warns on first run; RPMs and `SHA256SUMS` are GPG-signed and releases
+  carry build provenance ([verification steps](docs/verifying-downloads.md)).
+- Audit forwarding is verified against journald; point it at your collector
+  and confirm with [`docs/audit-validation.md`](docs/audit-validation.md).
+- The Docker/Kubernetes action path is implemented but not yet exercised end
+  to end, and third-party antivirus/EDR interoperability has not been tested.
 
 ## Roadmap
 
+- A release SBOM and CodeQL code scanning in CI.
 - Broader Linux distribution validation (Ubuntu/Debian) alongside the
   RHEL-family matrix.
 - A thin CI integration (for example a Jenkins shared library) wrapping the
