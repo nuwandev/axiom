@@ -1,0 +1,93 @@
+<svg class="ax-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 660" role="img" aria-labelledby="host-t host-d"><title id="host-t">Anatomy of one managed host</title><desc id="host-d">What one Axiom agent reads, runs and writes on a managed host. Binary, configuration, certificates and scripts are read-only to the service account and verified at startup. The audit log directory is the writable area. Inbound TCP 8443 is the only network surface.</desc><defs><marker id="host-m-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-ctl"/></marker><marker id="host-m-loc" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-loc"/></marker><marker id="host-m-data" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-data"/></marker><marker id="host-m-aud" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-aud"/></marker><marker id="host-m-pki" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-pki"/></marker></defs>
+<rect x="640" y="20" width="300" height="56" rx="8" class="ax-box ax-box-ghost"/>
+<text x="790" y="44" class="ax-tb" text-anchor="middle">Jenkins build executor</text>
+<text x="790" y="62" class="ax-ts" text-anchor="middle">customer, outside the host</text>
+<path d="M790,76 V162" class="ax-l-ctl-b" marker-end="url(#host-m-ctl)"/>
+<text x="806" y="98" class="ax-tb">inbound TCP 8443 only</text>
+<text x="806" y="116" class="ax-ts">HTTPS, mutual TLS</text>
+<rect x="20" y="60" width="540" height="560" rx="10" class="ax-zone"/>
+<text x="40" y="86" class="ax-th">READ-ONLY TO THE SERVICE ACCOUNT</text>
+<text x="40" y="102" class="ax-ts">checked at startup: the agent refuses to start otherwise</text>
+<rect x="40" y="118" width="500" height="108" rx="8" class="ax-box"/>
+<text x="56" y="144" class="ax-tb">Binary</text>
+<text x="56" y="170" class="ax-ts">Linux</text>
+<text x="116" y="170" class="ax-tm">/usr/local/bin/axiom</text>
+<text x="56" y="190" class="ax-ts">Windows</text>
+<text x="116" y="190" class="ax-tm">%ProgramFiles%\Axiom\axiom.exe</text>
+<text x="56" y="213" class="ax-ts">static Go binary</text>
+<rect x="40" y="242" width="500" height="108" rx="8" class="ax-box"/>
+<text x="56" y="268" class="ax-tb">Configuration</text>
+<text x="56" y="294" class="ax-ts">Linux</text>
+<text x="116" y="294" class="ax-tm">/etc/axiom/config.yaml</text>
+<text x="56" y="314" class="ax-ts">Windows</text>
+<text x="116" y="314" class="ax-tm">%ProgramData%\Axiom\config.yaml</text>
+<text x="56" y="337" class="ax-ts">identities, actions, limits: read once</text>
+<rect x="40" y="366" width="500" height="108" rx="8" class="ax-box"/>
+<text x="56" y="392" class="ax-tb">Certificates</text>
+<text x="56" y="418" class="ax-ts">Linux</text>
+<text x="116" y="418" class="ax-tm">/etc/axiom/certs/*</text>
+<text x="56" y="438" class="ax-ts">Windows</text>
+<text x="116" y="438" class="ax-tm">%ProgramData%\Axiom\certs\*</text>
+<text x="56" y="461" class="ax-ts">ca.crt, server.crt, server.key</text>
+<rect x="40" y="490" width="500" height="108" rx="8" class="ax-box"/>
+<text x="56" y="516" class="ax-tb">Action scripts</text>
+<text x="56" y="542" class="ax-ts">Linux</text>
+<text x="116" y="542" class="ax-tm">/opt/axiom/actions/*.sh</text>
+<text x="56" y="562" class="ax-ts">Windows</text>
+<text x="116" y="562" class="ax-tm">%ProgramData%\Axiom\capabilities\*.ps1</text>
+<text x="56" y="585" class="ax-ts">reviewed and installed by the bank</text>
+<rect x="620" y="130" width="340" height="490" rx="10" class="ax-zone"/>
+<text x="640" y="150" class="ax-th">RUNNING ON THE HOST</text>
+<rect x="640" y="162" width="300" height="268" rx="8" class="ax-box ax-box-agent"/>
+<text x="656" y="188" class="ax-tb">axiom process</text>
+<text x="656" y="206" class="ax-tm">axiom user / NT SERVICE\axiom</text>
+<rect x="656" y="226" width="268" height="38" rx="5" class="ax-chip"/>
+<text x="672" y="250" class="ax-t">TLS listener · :8443</text>
+<rect x="656" y="272" width="268" height="38" rx="5" class="ax-chip"/>
+<text x="672" y="296" class="ax-t">identity and authorization</text>
+<rect x="656" y="318" width="268" height="38" rx="5" class="ax-chip"/>
+<text x="672" y="342" class="ax-t">job manager</text>
+<rect x="656" y="364" width="268" height="38" rx="5" class="ax-chip"/>
+<text x="672" y="388" class="ax-t">executor</text>
+<rect x="640" y="452" width="300" height="150" rx="8" class="ax-box ax-box-loc"/>
+<text x="656" y="478" class="ax-tb">action script</text>
+<text x="656" y="498" class="ax-t">child process, same account</text>
+<text x="656" y="518" class="ax-t">own process group / Job Object</text>
+<text x="656" y="574" class="ax-ts">may touch the network and local services</text>
+<text x="656" y="592" class="ax-ts">Axiom controls the invocation only</text>
+<path d="M790,430 V452" class="ax-l-loc" marker-end="url(#host-m-loc)"/>
+<rect x="1040" y="60" width="520" height="560" rx="10" class="ax-zone"/>
+<text x="1060" y="86" class="ax-th">WRITABLE BY THE SERVICE ACCOUNT</text>
+<text x="1060" y="102" class="ax-ts">the only places the account can change</text>
+<rect x="1060" y="118" width="480" height="108" rx="8" class="ax-box"/>
+<text x="1076" y="144" class="ax-tb">Audit log</text>
+<text x="1076" y="170" class="ax-ts">Linux</text>
+<text x="1136" y="170" class="ax-tm">/var/log/axiom/audit.log</text>
+<text x="1076" y="190" class="ax-ts">Windows</text>
+<text x="1136" y="190" class="ax-tm">%ProgramData%\Axiom\logs\audit.log</text>
+<text x="1076" y="213" class="ax-ts">operational copy, appended and fsynced</text>
+<rect x="1060" y="242" width="480" height="108" rx="8" class="ax-box"/>
+<text x="1076" y="268" class="ax-tb">State and temp</text>
+<text x="1076" y="294" class="ax-ts">Linux</text>
+<text x="1136" y="294" class="ax-tm">/var/lib/axiom (HOME), private /tmp</text>
+<text x="1076" y="314" class="ax-ts">Windows</text>
+<text x="1136" y="314" class="ax-tm">service %TEMP%, logs\axiom.log</text>
+<text x="1076" y="337" class="ax-ts">scripts and tools write here, nowhere else</text>
+<rect x="1060" y="366" width="480" height="90" rx="8" class="ax-box ax-box-aud"/>
+<text x="1076" y="392" class="ax-tb">journald / syslog (Linux)</text>
+<text x="1076" y="412" class="ax-t">same audit JSON, handed to the local socket</text>
+<rect x="1060" y="482" width="480" height="70" rx="8" class="ax-box ax-box-ghost"/>
+<text x="1076" y="508" class="ax-tb">Forwarder and central collector</text>
+<text x="1076" y="528" class="ax-ts">customer-operated, outside this host</text>
+<path d="M1300,456 V482" class="ax-l-aud" marker-end="url(#host-m-aud)"/>
+<path d="M540,172 H640" class="ax-l-data" marker-end="url(#host-m-data)"/>
+<path d="M540,296 H640" class="ax-l-data" marker-end="url(#host-m-data)"/>
+<path d="M540,420 H640" class="ax-l-data" marker-end="url(#host-m-data)"/>
+<text x="562" y="160" class="ax-ts">read</text>
+<path d="M540,540 H640" class="ax-l-loc" marker-end="url(#host-m-loc)"/>
+<text x="564" y="528" class="ax-ts">executed</text>
+<path d="M940,172 H1060" class="ax-l-data" marker-end="url(#host-m-data)"/>
+<path d="M940,296 H1060" class="ax-l-data" marker-end="url(#host-m-data)"/>
+<path d="M940,410 H1060" class="ax-l-aud" marker-end="url(#host-m-aud)"/>
+<text x="968" y="162" class="ax-ts">append</text>
+</svg>

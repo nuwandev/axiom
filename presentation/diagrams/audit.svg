@@ -1,0 +1,98 @@
+<svg class="ax-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 850" role="img" aria-labelledby="aud-t aud-d"><title id="aud-t">Audit data flow</title><desc id="aud-d">Four event types enter audit.Logger.Write, which stamps, truncates, redacts, marshals, locks, appends and fsyncs one JSON line, then hands it to any sink. The local file is an operational copy, the Linux syslog sink feeds the authoritative central collector, and Windows has no sink. Failed TLS handshakes never reach the audit log.</desc><defs><marker id="aud-m-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-ctl"/></marker><marker id="aud-m-loc" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-loc"/></marker><marker id="aud-m-data" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-data"/></marker><marker id="aud-m-aud" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-aud"/></marker><marker id="aud-m-pki" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-pki"/></marker></defs>
+<text x="20" y="40" class="ax-th">EVENTS</text>
+<rect x="20" y="56" width="290" height="60" rx="6" class="ax-box ax-box-aud"/>
+<text x="36" y="82" class="ax-tb">accepted</text>
+<text x="36" y="102" class="ax-ts">Manager.Trigger</text>
+<path d="M310,86 H350" class="ax-l-aud" marker-end="url(#aud-m-aud)"/>
+<rect x="20" y="132" width="290" height="60" rx="6" class="ax-box ax-box-aud"/>
+<text x="36" y="158" class="ax-tb">started</text>
+<text x="36" y="178" class="ax-ts">Manager.run, before exec</text>
+<path d="M310,162 H350" class="ax-l-aud" marker-end="url(#aud-m-aud)"/>
+<rect x="20" y="208" width="290" height="60" rx="6" class="ax-box ax-box-aud"/>
+<text x="36" y="234" class="ax-tb">finished</text>
+<text x="36" y="254" class="ax-ts">Manager.run, after the outcome</text>
+<path d="M310,238 H350" class="ax-l-aud" marker-end="url(#aud-m-aud)"/>
+<rect x="20" y="284" width="290" height="60" rx="6" class="ax-box ax-box-aud"/>
+<text x="36" y="310" class="ax-tb">rejected</text>
+<text x="36" y="330" class="ax-ts">withIdentity, handleTriggerAction</text>
+<path d="M310,314 H350" class="ax-l-aud" marker-end="url(#aud-m-aud)"/>
+<rect x="20" y="366" width="290" height="104" rx="6" class="ax-note"/>
+<text x="34" y="388" class="ax-th">RECORD FIELDS</text>
+<text x="34" y="407" class="ax-tm">timestamp, agent, event, job_id,</text>
+<text x="34" y="426" class="ax-tm">identity, action, parameters,</text>
+<text x="34" y="445" class="ax-tm">result, reason, duration_ms</text>
+<rect x="350" y="40" width="660" height="430" rx="10" class="ax-zone"/>
+<text x="368" y="68" class="ax-tb">audit.Logger.Write(Record)</text>
+<text x="368" y="86" class="ax-tm">internal/audit/audit.go</text>
+<rect x="368" y="102" width="624" height="42" rx="5" class="ax-chip"/>
+<text x="392" y="129" class="ax-tmb" text-anchor="middle">1</text>
+<text x="412" y="129" class="ax-t">stamp the agent ID and a UTC timestamp</text>
+<rect x="368" y="154" width="624" height="42" rx="5" class="ax-chip"/>
+<text x="392" y="181" class="ax-tmb" text-anchor="middle">2</text>
+<text x="412" y="181" class="ax-t">truncate identity, action, reason to 512 bytes</text>
+<rect x="368" y="206" width="624" height="42" rx="5" class="ax-chip"/>
+<text x="392" y="233" class="ax-tmb" text-anchor="middle">3</text>
+<text x="412" y="233" class="ax-t">redact values of secret-named parameters</text>
+<rect x="368" y="258" width="624" height="42" rx="5" class="ax-chip"/>
+<text x="392" y="285" class="ax-tmb" text-anchor="middle">4</text>
+<text x="412" y="285" class="ax-t">marshal one JSON object</text>
+<rect x="368" y="310" width="624" height="42" rx="5" class="ax-chip"/>
+<text x="392" y="337" class="ax-tmb" text-anchor="middle">5</text>
+<text x="412" y="337" class="ax-t">take the writer mutex: records never interleave</text>
+<rect x="368" y="362" width="624" height="42" rx="5" class="ax-chip ax-chip-agent"/>
+<text x="392" y="389" class="ax-tmb" text-anchor="middle">6</text>
+<text x="412" y="389" class="ax-t">append the line to the file, then fsync</text>
+<rect x="368" y="414" width="624" height="42" rx="5" class="ax-chip ax-chip-agent"/>
+<text x="392" y="441" class="ax-tmb" text-anchor="middle">7</text>
+<text x="412" y="441" class="ax-t">hand the same JSON to every Sink</text>
+<text x="992" y="233" class="ax-ts" text-anchor="end">token, pass, key, cert, ...</text>
+<text x="992" y="441" class="ax-ts" text-anchor="end">any error is returned</text>
+<text x="1070" y="40" class="ax-th">DESTINATIONS</text>
+<rect x="1070" y="56" width="490" height="124" rx="8" class="ax-box"/>
+<text x="1086" y="82" class="ax-tb">Local audit file</text>
+<text x="1086" y="101" class="ax-tm">JSONL, O_APPEND, mode 0640</text>
+<text x="1086" y="120" class="ax-t">operational copy: the account that runs</text>
+<text x="1086" y="139" class="ax-t">scripts owns it and can alter it</text>
+<rect x="1070" y="200" width="490" height="150" rx="8" class="ax-box ax-box-aud"/>
+<text x="1086" y="226" class="ax-tb">Linux: syslog sink</text>
+<text x="1086" y="245" class="ax-tm">facility AUTH, tag axiom-audit</text>
+<text x="1086" y="264" class="ax-t">journald, then the bank's forwarder,</text>
+<text x="1086" y="283" class="ax-t">then the central collector: the</text>
+<text x="1086" y="302" class="ax-t">authoritative, tamper-resistant copy</text>
+<rect x="1070" y="370" width="490" height="100" rx="8" class="ax-box ax-box-warn"/>
+<text x="1086" y="396" class="ax-tb">Windows: no sink</text>
+<text x="1086" y="415" class="ax-t">audit.syslog is rejected at config load;</text>
+<text x="1086" y="434" class="ax-t">the local file is the only audit record</text>
+<path d="M1010,358 H1030 V118 H1070" class="ax-l-data" marker-end="url(#aud-m-data)"/>
+<path d="M1010,410 H1050 V275 H1070" class="ax-l-aud" marker-end="url(#aud-m-aud)"/>
+<text x="20" y="520" class="ax-th">IF THE WRITE OR THE FORWARD FAILS</text>
+<rect x="20" y="536" width="370" height="104" rx="8" class="ax-box ax-box-agent"/>
+<text x="36" y="562" class="ax-tb">accepted fails</text>
+<text x="36" y="588" class="ax-t">job removed, slot and lock released</text>
+<text x="36" y="608" class="ax-t">API answers 500; the action never runs</text>
+<rect x="410" y="536" width="370" height="104" rx="8" class="ax-box ax-box-agent"/>
+<text x="426" y="562" class="ax-tb">started fails</text>
+<text x="426" y="588" class="ax-t">job marked failed: audit log unavailable</text>
+<text x="426" y="608" class="ax-t">the script is not executed</text>
+<rect x="800" y="536" width="370" height="104" rx="8" class="ax-box"/>
+<text x="816" y="562" class="ax-tb">finished fails</text>
+<text x="816" y="588" class="ax-t">logged to the operational log only</text>
+<text x="816" y="608" class="ax-t">outcome already decided; record may be missing</text>
+<rect x="1190" y="536" width="370" height="104" rx="8" class="ax-box"/>
+<text x="1206" y="562" class="ax-tb">rejected fails</text>
+<text x="1206" y="588" class="ax-t">logged to the operational log only</text>
+<text x="1206" y="608" class="ax-t">the 401 or 403 is still returned</text>
+<text x="20" y="666" class="ax-ts">accepted and started fail closed: an action is never run without its record having been written and handed to every sink.</text>
+<text x="20" y="716" class="ax-th">NOT AN AUDIT RECORD</text>
+<rect x="20" y="732" width="420" height="76" rx="8" class="ax-box ax-box-warn"/>
+<text x="36" y="758" class="ax-tb">TLS handshake fails</text>
+<text x="36" y="778" class="ax-ts">no valid client certificate (default mode)</text>
+<path d="M440,770 H520" class="ax-l-warn" marker-end="url(#aud-m-aud)"/>
+<rect x="520" y="732" width="480" height="76" rx="8" class="ax-box"/>
+<text x="536" y="758" class="ax-tb">net/http default logger</text>
+<text x="536" y="778" class="ax-tm">"http: TLS handshake error" on stderr</text>
+<path d="M1000,770 H1080" class="ax-l-warn" marker-end="url(#aud-m-aud)"/>
+<rect x="1080" y="732" width="480" height="76" rx="8" class="ax-box ax-box-warn"/>
+<text x="1096" y="758" class="ax-tb">No audit record, no HTTP response</text>
+<text x="1096" y="778" class="ax-ts">monitor failed auth at the network layer</text>
+</svg>

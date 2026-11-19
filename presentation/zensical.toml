@@ -1,0 +1,64 @@
+# Axiom architecture presentation: Zensical project.
+#
+# Build from this directory:  zensical build -f zensical.toml
+# See README.md in this directory for the full workflow.
+
+[project]
+site_name = "Axiom architecture"
+site_description = "A source-verified architecture and engineering presentation of the Axiom automation agent, shown in an illustrative banking deployment."
+site_author = "Theekshana Nuwan"
+docs_dir = "docs"
+site_dir = "site"
+use_directory_urls = true
+extra_css = ["stylesheets/axiom.css"]
+nav = [
+  { "Architecture presentation" = "index.md" },
+]
+
+[project.theme]
+language = "en"
+# Fonts are not fetched from a third party: the presentation uses system fonts
+# so it renders identically on an air-gapped workstation.
+font = false
+features = [
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.top",
+  "navigation.tracking",
+  "toc.follow",
+  "toc.integrate",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+def_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+toc.toc_depth = "2-3"
+pymdownx.betterem = {}
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.snippets.base_path = ["diagrams"]
+pymdownx.snippets.check_paths = true
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true

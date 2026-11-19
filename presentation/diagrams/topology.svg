@@ -1,0 +1,220 @@
+<svg class="ax-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 1180" role="img" aria-labelledby="topo-t topo-d"><title id="topo-t">Illustrative banking deployment topology for Axiom</title><desc id="topo-d">CI/CD zone with Jenkins and registry, a perimeter firewall allowing TCP 8443 with mutual TLS passed through unterminated, and a bank network zone with web, application and database tiers. An Axiom agent runs independently on each managed host. Customer application traffic, local action execution, audit forwarding and certificate issuance are drawn as separate paths.</desc><defs><marker id="topo-m-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-ctl"/></marker><marker id="topo-m-loc" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-loc"/></marker><marker id="topo-m-data" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-data"/></marker><marker id="topo-m-aud" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-aud"/></marker><marker id="topo-m-pki" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-pki"/></marker></defs>
+<!-- zones -->
+<rect x="20" y="64" width="450" height="980" rx="10" class="ax-zone"/>
+<text x="40" y="92" class="ax-th">CI/CD ENVIRONMENT</text>
+<text x="40" y="108" class="ax-ts">engineering network zone</text>
+<rect x="630" y="64" width="930" height="980" rx="10" class="ax-zone"/>
+<text x="650" y="92" class="ax-th">BANK NETWORK ZONE</text>
+<text x="650" y="108" class="ax-ts">production security boundary</text>
+<rect x="543" y="64" width="14" height="980" rx="2" class="ax-fw"/>
+<text x="550" y="740" class="ax-fwt" text-anchor="middle" transform="rotate(-90 550 740)">PERIMETER FIREWALL</text>
+<rect x="472" y="118" width="156" height="152" rx="6" class="ax-callout"/>
+<text x="484" y="140" class="ax-th">FIREWALL RULE</text>
+<text x="484" y="157" class="ax-tb">allow TCP 8443</text>
+<text x="484" y="174" class="ax-t">executor → agents</text>
+<text x="484" y="191" class="ax-t">TLS not terminated:</text>
+<text x="484" y="208" class="ax-t">L4 passthrough only</text>
+<text x="484" y="225" class="ax-tb">No reverse proxy</text>
+<text x="484" y="242" class="ax-tb">or TLS-terminating</text>
+<text x="484" y="259" class="ax-tb">WAF in this path</text>
+<!-- ci/cd -->
+<rect x="40" y="112" width="110" height="52" rx="6" class="ax-box"/>
+<text x="95" y="143" class="ax-tb" text-anchor="middle">Developer</text>
+<rect x="200" y="112" width="250" height="52" rx="6" class="ax-box"/>
+<text x="325" y="134" class="ax-tb" text-anchor="middle">Jenkins controller</text>
+<text x="325" y="152" class="ax-ts" text-anchor="middle">schedules the pipeline run</text>
+<path d="M150,138 H200" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<circle cx="175" cy="124" r="11" class="ax-badge"/>
+<text x="175" y="128.5" class="ax-badge-t" text-anchor="middle">1</text>
+<path d="M325,164 V210" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<rect x="40" y="210" width="262" height="372" rx="8" class="ax-box ax-box-strong"/>
+<text x="56" y="236" class="ax-tb">Build executor · pipeline run</text>
+<rect x="56" y="256" width="230" height="48" rx="5" class="ax-chip"/>
+<text x="86" y="285" class="ax-t">Source checkout</text>
+<text x="72" y="285" class="ax-ts" text-anchor="middle">1</text>
+<rect x="56" y="320" width="230" height="48" rx="5" class="ax-chip"/>
+<text x="86" y="349" class="ax-t">Build</text>
+<text x="72" y="349" class="ax-ts" text-anchor="middle">2</text>
+<rect x="56" y="384" width="230" height="48" rx="5" class="ax-chip"/>
+<text x="86" y="413" class="ax-t">Test</text>
+<text x="72" y="413" class="ax-ts" text-anchor="middle">3</text>
+<rect x="56" y="448" width="230" height="48" rx="5" class="ax-chip"/>
+<text x="86" y="477" class="ax-t">Publish artifact</text>
+<text x="72" y="477" class="ax-ts" text-anchor="middle">4</text>
+<rect x="56" y="512" width="230" height="48" rx="5" class="ax-chip ax-chip-ctl"/>
+<text x="86" y="541" class="ax-tb">Deployment request</text>
+<text x="72" y="541" class="ax-ts" text-anchor="middle">5</text>
+<rect x="318" y="250" width="132" height="60" rx="6" class="ax-box"/>
+<text x="384" y="276" class="ax-t" text-anchor="middle">Source</text>
+<text x="384" y="293" class="ax-t" text-anchor="middle">repository</text>
+<path d="M286,280 H318" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<circle cx="302" cy="266" r="11" class="ax-badge"/>
+<text x="302" y="270.5" class="ax-badge-t" text-anchor="middle">2</text>
+<rect x="318" y="436" width="132" height="72" rx="6" class="ax-box"/>
+<text x="384" y="462" class="ax-t" text-anchor="middle">Artifact /</text>
+<text x="384" y="479" class="ax-t" text-anchor="middle">image registry</text>
+<path d="M286,472 H318" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<circle cx="302" cy="458" r="11" class="ax-badge"/>
+<text x="302" y="462.5" class="ax-badge-t" text-anchor="middle">3</text>
+<rect x="40" y="640" width="262" height="80" rx="6" class="ax-box"/>
+<text x="56" y="662" class="ax-tb">Jenkins credential store</text>
+<text x="56" y="679" class="ax-ts">client certificate (CN = identity)</text>
+<text x="56" y="696" class="ax-ts">private key, CA certificate</text>
+<path d="M171,640 V584" class="ax-l-pki" marker-end="url(#topo-m-pki)"/>
+<text x="162" y="616" class="ax-ts" text-anchor="end">bound at the deploy step</text>
+<circle cx="264" cy="536" r="11" class="ax-badge"/>
+<text x="264" y="540.5" class="ax-badge-t" text-anchor="middle">4</text>
+<!-- legend -->
+<rect x="40" y="770" width="410" height="252" rx="6" class="ax-legend"/>
+<text x="56" y="794" class="ax-th">LEGEND</text>
+<path d="M56,820 H112" class="ax-l-ctl" marker-end="url(#topo-m-ctl)"/>
+<text x="124" y="824.5" class="ax-t">Axiom control plane · HTTPS + mutual TLS</text>
+<path d="M56,848 H112" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<text x="124" y="852.5" class="ax-t">Local action execution on the host</text>
+<path d="M56,876 H112" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<text x="124" y="880.5" class="ax-t">Customer application / database traffic</text>
+<path d="M56,904 H112" class="ax-l-art" marker-end="url(#topo-m-data)"/>
+<text x="124" y="908.5" class="ax-t">Optional artifact / image pull by a script</text>
+<path d="M56,932 H112" class="ax-l-aud" marker-end="url(#topo-m-aud)"/>
+<text x="124" y="936.5" class="ax-t">Audit forwarding (Linux journald / syslog)</text>
+<path d="M56,960 H112" class="ax-l-pki" marker-end="url(#topo-m-pki)"/>
+<text x="124" y="964.5" class="ax-t">Certificate issuance (customer PKI)</text>
+<rect x="56" y="990" width="54" height="22" rx="4" class="ax-chip ax-chip-agent"/>
+<text x="124" y="1005" class="ax-t">Axiom component</text>
+<rect x="290" y="990" width="54" height="22" rx="4" class="ax-chip"/>
+<text x="356" y="1005" class="ax-t">Customer</text>
+<!-- customer lane -->
+<text x="1275" y="112" class="ax-th">CUSTOMER TRAFFIC · NOT AXIOM</text>
+<rect x="1275" y="124" width="260" height="36" rx="6" class="ax-box ax-box-ghost"/>
+<text x="1405" y="147" class="ax-t" text-anchor="middle">Customers / internet</text>
+<rect x="1275" y="180" width="260" height="52" rx="6" class="ax-box"/>
+<text x="1405" y="202" class="ax-tb" text-anchor="middle">WAF / load balancer</text>
+<text x="1405" y="220" class="ax-ts" text-anchor="middle">fronts the web tier only</text>
+<path d="M1405,160 V180" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<rect x="650" y="130" width="592" height="216" rx="8" class="ax-band"/>
+<text x="676" y="152" class="ax-th">WEB TIER</text>
+<text x="1226" y="152" class="ax-ts" text-anchor="end">one agent per host</text>
+<rect x="688" y="192" width="230" height="140" rx="6" class="ax-host"/>
+<text x="702" y="212" class="ax-tb">Web server 01</text>
+<rect x="702" y="226" width="202" height="44" rx="5" class="ax-chip ax-chip-agent"/>
+<text x="712" y="245" class="ax-tb">Axiom agent · :8443</text>
+<text x="712" y="261" class="ax-ts">own config, cert, allowlist</text>
+<rect x="702" y="290" width="98" height="32" rx="5" class="ax-chip ax-chip-loc"/>
+<text x="751" y="311" class="ax-t" text-anchor="middle">action script</text>
+<rect x="810" y="290" width="94" height="32" rx="5" class="ax-chip"/>
+<text x="857" y="311" class="ax-t" text-anchor="middle">app / service</text>
+<path d="M751,270 V290" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M800,306 H810" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<rect x="942" y="192" width="230" height="140" rx="6" class="ax-host"/>
+<text x="956" y="212" class="ax-tb">Web server 02</text>
+<rect x="956" y="226" width="202" height="44" rx="5" class="ax-chip ax-chip-agent"/>
+<text x="966" y="245" class="ax-tb">Axiom agent · :8443</text>
+<text x="966" y="261" class="ax-ts">own config, cert, allowlist</text>
+<rect x="956" y="290" width="98" height="32" rx="5" class="ax-chip ax-chip-loc"/>
+<text x="1005" y="311" class="ax-t" text-anchor="middle">action script</text>
+<rect x="1064" y="290" width="94" height="32" rx="5" class="ax-chip"/>
+<text x="1111" y="311" class="ax-t" text-anchor="middle">app / service</text>
+<path d="M1005,270 V290" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M1054,306 H1064" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M1158,248 H1198" class="ax-l-aud"/>
+<path d="M666,170 H1057" class="ax-l-ctl"/>
+<path d="M803,170 V226" class="ax-l-ctl" marker-end="url(#topo-m-ctl)"/>
+<path d="M1057,170 V226" class="ax-l-ctl" marker-end="url(#topo-m-ctl)"/>
+<rect x="650" y="372" width="592" height="216" rx="8" class="ax-band"/>
+<text x="676" y="394" class="ax-th">APPLICATION TIER</text>
+<text x="1226" y="394" class="ax-ts" text-anchor="end">one agent per host</text>
+<rect x="688" y="434" width="230" height="140" rx="6" class="ax-host"/>
+<text x="702" y="454" class="ax-tb">Application server 01</text>
+<rect x="702" y="468" width="202" height="44" rx="5" class="ax-chip ax-chip-agent"/>
+<text x="712" y="487" class="ax-tb">Axiom agent · :8443</text>
+<text x="712" y="503" class="ax-ts">own config, cert, allowlist</text>
+<rect x="702" y="532" width="98" height="32" rx="5" class="ax-chip ax-chip-loc"/>
+<text x="751" y="553" class="ax-t" text-anchor="middle">action script</text>
+<rect x="810" y="532" width="94" height="32" rx="5" class="ax-chip"/>
+<text x="857" y="553" class="ax-t" text-anchor="middle">app / service</text>
+<path d="M751,512 V532" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M800,548 H810" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<rect x="942" y="434" width="230" height="140" rx="6" class="ax-host"/>
+<text x="956" y="454" class="ax-tb">Application server 02</text>
+<rect x="956" y="468" width="202" height="44" rx="5" class="ax-chip ax-chip-agent"/>
+<text x="966" y="487" class="ax-tb">Axiom agent · :8443</text>
+<text x="966" y="503" class="ax-ts">own config, cert, allowlist</text>
+<rect x="956" y="532" width="98" height="32" rx="5" class="ax-chip ax-chip-loc"/>
+<text x="1005" y="553" class="ax-t" text-anchor="middle">action script</text>
+<rect x="1064" y="532" width="94" height="32" rx="5" class="ax-chip"/>
+<text x="1111" y="553" class="ax-t" text-anchor="middle">app / service</text>
+<path d="M1005,512 V532" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M1054,548 H1064" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M1158,490 H1198" class="ax-l-aud"/>
+<path d="M666,412 H1057" class="ax-l-ctl"/>
+<path d="M803,412 V468" class="ax-l-ctl" marker-end="url(#topo-m-ctl)"/>
+<path d="M1057,412 V468" class="ax-l-ctl" marker-end="url(#topo-m-ctl)"/>
+<rect x="650" y="614" width="592" height="216" rx="8" class="ax-band"/>
+<text x="676" y="636" class="ax-th">DATABASE TIER</text>
+<text x="1226" y="636" class="ax-ts" text-anchor="end">one agent per host</text>
+<rect x="942" y="676" width="230" height="140" rx="6" class="ax-host"/>
+<text x="956" y="696" class="ax-tb">Database server</text>
+<text x="1158" y="696" class="ax-ts" text-anchor="end">optional agent</text>
+<rect x="956" y="710" width="202" height="44" rx="5" class="ax-chip ax-chip-agent ax-dash"/>
+<text x="966" y="729" class="ax-tb">Axiom agent · :8443</text>
+<text x="966" y="745" class="ax-ts">own config, cert, allowlist</text>
+<rect x="956" y="774" width="98" height="32" rx="5" class="ax-chip ax-chip-loc"/>
+<text x="1005" y="795" class="ax-t" text-anchor="middle">action script</text>
+<rect x="1064" y="774" width="94" height="32" rx="5" class="ax-chip"/>
+<text x="1111" y="795" class="ax-t" text-anchor="middle">app / service</text>
+<path d="M1005,754 V774" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M1054,790 H1064" class="ax-l-loc" marker-end="url(#topo-m-loc)"/>
+<path d="M1158,732 H1198" class="ax-l-aud"/>
+<rect x="688" y="676" width="230" height="140" rx="6" class="ax-note"/>
+<text x="702" y="700" class="ax-th">OPTIONAL AGENT</text>
+<text x="702" y="718" class="ax-t">Only when the bank needs</text>
+<text x="702" y="736" class="ax-t">local operations on the</text>
+<text x="702" y="754" class="ax-t">DB host. App-to-database</text>
+<text x="702" y="772" class="ax-t">SQL is unrelated to Axiom.</text>
+<path d="M666,654 H1057" class="ax-l-ctl"/>
+<path d="M1057,654 V710" class="ax-l-ctl" marker-end="url(#topo-m-ctl)"/>
+<path d="M666,170 V654" class="ax-l-ctl"/>
+<path d="M1198,248 V880" class="ax-l-aud" marker-end="url(#topo-m-aud)"/>
+<path d="M1405,232 V250 H1242" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<path d="M1242,300 H1405 V492 H1242" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<path d="M1242,542 H1405 V734 H1242" class="ax-l-data" marker-end="url(#topo-m-data)"/>
+<text x="1417" y="276" class="ax-ts">HTTPS</text>
+<text x="1417" y="410" class="ax-ts">application protocol</text>
+<text x="1417" y="654" class="ax-ts">SQL / database protocol</text>
+<rect x="1275" y="800" width="260" height="168" rx="6" class="ax-note"/>
+<text x="1289" y="826" class="ax-th">APPLICATION DATA PLANE</text>
+<text x="1289" y="844" class="ax-t">Axiom does not proxy,</text>
+<text x="1289" y="862" class="ax-t">inspect or manage this</text>
+<text x="1289" y="880" class="ax-t">traffic and never touches</text>
+<text x="1289" y="898" class="ax-t">database connections.</text>
+<text x="1289" y="916" class="ax-t">Scripts may do their own</text>
+<text x="1289" y="934" class="ax-t">deploys, restarts or pulls.</text>
+<rect x="872" y="880" width="370" height="88" rx="6" class="ax-box"/>
+<text x="886" y="904" class="ax-tb">Log collector / SIEM</text>
+<text x="886" y="921" class="ax-ts">Linux: journald / syslog forwarding</text>
+<text x="886" y="938" class="ax-ts">Windows: local audit.log only</text>
+<!-- control plane -->
+<path d="M286,536 H666" class="ax-l-ctl-b"/>
+<rect x="524" y="524" width="52" height="24" rx="12" class="ax-pill"/>
+<text x="550" y="541" class="ax-tb" text-anchor="middle">8443</text>
+<circle cx="470" cy="536" r="11" class="ax-badge"/>
+<text x="470" y="540.5" class="ax-badge-t" text-anchor="middle">5</text>
+<circle cx="610" cy="536" r="11" class="ax-badge"/>
+<text x="610" y="540.5" class="ax-badge-t" text-anchor="middle">6</text>
+<text x="310" y="566" class="ax-tb">HTTPS · mutual TLS</text>
+<text x="310" y="584" class="ax-tb">TCP 8443</text>
+<text x="310" y="602" class="ax-ts">trigger POST · poll GET</text>
+<text x="310" y="620" class="ax-ts">no callback to Jenkins</text>
+<circle cx="778" cy="280" r="11" class="ax-badge"/>
+<text x="778" y="284.5" class="ax-badge-t" text-anchor="middle">9</text>
+<path d="M450,490 H630" class="ax-l-art" marker-end="url(#topo-m-data)"/>
+<text x="476" y="484" class="ax-ts">script pull</text>
+<text x="476" y="508" class="ax-ts">(optional)</text>
+<rect x="690" y="1086" width="320" height="56" rx="6" class="ax-box"/>
+<text x="850" y="1108" class="ax-tb" text-anchor="middle">Bank PKI / internal CA</text>
+<text x="850" y="1125" class="ax-ts" text-anchor="middle">customer-owned, outside Axiom</text>
+<path d="M690,1114 H245 V1044" class="ax-l-pki" marker-end="url(#topo-m-pki)"/>
+<text x="262" y="1106" class="ax-ts">client certificate for the pipeline identity</text>
+<path d="M1010,1114 H1100 V1044" class="ax-l-pki" marker-end="url(#topo-m-pki)"/>
+<text x="1116" y="1106" class="ax-ts">server cert + ca.crt for each agent</text>
+</svg>

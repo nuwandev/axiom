@@ -1,0 +1,304 @@
+/* Axiom architecture presentation: visual system.
+   One accent hue for the Axiom control plane, one each for local execution and
+   audit, neutral greys for everything that is not Axiom. Diagram colours are
+   defined here (not inside the SVG files) so they follow the light/dark switch
+   and are forced to the light palette for print. */
+
+:root {
+  --ax-sans: ui-sans-serif, "Segoe UI Variable Text", "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --ax-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --ax-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #fbfaf7;
+  --md-default-fg-color: #1c2430;
+  --md-default-fg-color--light: #4a5568;
+  --md-default-fg-color--lighter: #8792a2;
+  --md-default-fg-color--lightest: #e4e2db;
+  --md-primary-fg-color: #fbfaf7;
+  --md-primary-bg-color: #1c2430;
+  --md-accent-fg-color: #1f4fd8;
+  --md-typeset-a-color: #1f4fd8;
+  --md-code-bg-color: #f1efe9;
+  --md-code-fg-color: #1c2430;
+
+  --ax-bg: #fbfaf7;
+  --ax-ink: #1c2430;
+  --ax-muted: #5b6676;
+  --ax-rule: #dcd9d0;
+  --ax-zone: #f4f2ec;
+  --ax-zone-line: #c9c5b9;
+  --ax-band: #fbfaf7;
+  --ax-surface: #ffffff;
+  --ax-chip: #f6f5f1;
+  --ax-line: #a9a79d;
+  --ax-ctl: #1f4fd8;
+  --ax-ctl-tint: #e8eefc;
+  --ax-loc: #0b766b;
+  --ax-loc-tint: #e1f3f0;
+  --ax-data: #6b7686;
+  --ax-aud: #a45f0a;
+  --ax-pki: #7b8696;
+  --ax-fw: #1c2430;
+  --ax-fw-text: #fbfaf7;
+  --ax-warn: #a8431a;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0f141b;
+  --md-default-fg-color: #dde3ec;
+  --md-default-fg-color--light: #a7b1c0;
+  --md-default-fg-color--lighter: #6f7b8c;
+  --md-default-fg-color--lightest: #232c38;
+  --md-primary-fg-color: #0f141b;
+  --md-primary-bg-color: #dde3ec;
+  --md-accent-fg-color: #86abff;
+  --md-typeset-a-color: #86abff;
+  --md-code-bg-color: #161d27;
+  --md-code-fg-color: #dde3ec;
+
+  --ax-bg: #0f141b;
+  --ax-ink: #dde3ec;
+  --ax-muted: #97a3b4;
+  --ax-rule: #27303c;
+  --ax-zone: #131a23;
+  --ax-zone-line: #34404f;
+  --ax-band: #0f141b;
+  --ax-surface: #18202b;
+  --ax-chip: #1c2531;
+  --ax-line: #4a5667;
+  --ax-ctl: #86abff;
+  --ax-ctl-tint: #1b2a4a;
+  --ax-loc: #55d1c1;
+  --ax-loc-tint: #12332f;
+  --ax-data: #8b97a8;
+  --ax-aud: #e5a85a;
+  --ax-pki: #8a96a8;
+  --ax-fw: #dde3ec;
+  --ax-fw-text: #0f141b;
+  --ax-warn: #f0885a;
+}
+
+/* ---- page chrome ---------------------------------------------------- */
+body, .md-typeset { font-family: var(--ax-sans); }
+.md-typeset code, .md-typeset pre, .md-typeset kbd { font-family: var(--ax-mono); }
+.md-sidebar--primary { width: 11.5rem; }
+.md-header { box-shadow: none; border-bottom: 1px solid var(--ax-rule); }
+.md-grid { max-width: none; }
+.md-typeset { font-size: 0.82rem; line-height: 1.7; }
+@media (min-width: 100em) { .md-typeset { font-size: 0.86rem; } }
+
+/* readable prose measure inside a wide page */
+.md-typeset > p,
+.md-typeset > ul,
+.md-typeset > ol,
+.md-typeset > .admonition,
+.md-typeset > details,
+.md-typeset > .tabbed-set,
+.md-typeset > dl { max-width: 62rem; }
+
+.md-typeset h1, .md-typeset h2, .md-typeset h3 {
+  font-family: var(--ax-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ax-ink);
+}
+.md-typeset h1.ax-title {
+  font-size: 2.7rem; line-height: 1.1; margin: 0.2rem 0 0.6rem; letter-spacing: -0.02em;
+}
+.md-typeset h2 {
+  font-size: 1.75rem; margin: 4.2rem 0 1.1rem; padding-top: 1.4rem;
+  border-top: 1px solid var(--ax-rule);
+  scroll-margin-top: 4rem;
+}
+.md-typeset h3 {
+  font-size: 1.15rem; margin: 2.2rem 0 0.6rem; font-weight: 600;
+}
+.md-typeset h3 + p { margin-top: 0.4rem; }
+.ax-kicker {
+  font-family: var(--ax-sans); font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ax-muted); margin: 0 0 0.3rem; font-weight: 600;
+}
+
+/* ---- cover ---------------------------------------------------------- */
+.ax-hero { margin: 0.5rem 0 1.5rem; }
+.ax-hero .ax-lede {
+  font-family: var(--ax-serif); font-size: 1.28rem; line-height: 1.5; color: var(--ax-muted);
+  max-width: 52rem; margin: 0 0 1.4rem;
+}
+.ax-facts {
+  display: flex; flex-wrap: wrap; border-top: 1px solid var(--ax-rule); border-bottom: 1px solid var(--ax-rule);
+  margin: 1.4rem 0 2rem;
+}
+.ax-facts > div { flex: 1 1 11rem; padding: 0.8rem 1rem 0.8rem 0; }
+.ax-facts dt, .ax-facts .k {
+  font-size: 0.64rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ax-muted); font-weight: 600; margin: 0;
+}
+.ax-facts dd, .ax-facts .v { margin: 0.15rem 0 0; font-size: 0.86rem; font-weight: 500; }
+.ax-index {
+  columns: 2 22rem; column-gap: 3rem; list-style: none; margin: 0 0 1rem; padding: 0;
+  counter-reset: axidx; max-width: 62rem;
+}
+.ax-index li { break-inside: avoid; margin: 0 0 0.9rem; padding-left: 2.6rem; position: relative; counter-increment: axidx; }
+.ax-index li::before {
+  content: counter(axidx, decimal-leading-zero); position: absolute; left: 0; top: 0.05rem;
+  font-family: var(--ax-mono); font-size: 0.74rem; color: var(--ax-ctl);
+}
+.ax-index a { font-weight: 600; color: var(--ax-ink); }
+.ax-index span { display: block; color: var(--ax-muted); font-size: 0.78rem; line-height: 1.45; }
+
+/* ---- figures -------------------------------------------------------- */
+.md-typeset figure.ax-fig {
+  display: block; width: 100%; max-width: 100%;
+  margin: 1.6rem 0 2.2rem; padding: 1rem 1rem 0.7rem; background: var(--ax-surface);
+  border: 1px solid var(--ax-rule); border-radius: 10px; overflow-x: auto;
+}
+.md-typeset figure.ax-fig > .ax-scroll { min-width: 1020px; }
+.md-typeset figure.ax-fig figcaption {
+  font-size: 0.74rem; color: var(--ax-muted); padding: 0.7rem 0.2rem 0.2rem; border-top: 1px solid var(--ax-rule); margin-top: 0.6rem;
+  min-width: 0; max-width: none; text-align: left; font-style: normal; font-family: var(--ax-sans);
+}
+.md-typeset figure.ax-fig .mermaid { display: flex; justify-content: center; padding: 0.4rem 0; }
+.md-typeset figure.ax-fig .mermaid svg { max-width: 100%; height: auto; }
+.ax-fig.ax-fig-tight { max-width: 62rem; }
+
+/* ---- reference tables ---------------------------------------------- */
+.md-typeset table:not([class]) {
+  font-size: 0.76rem; border: 1px solid var(--ax-rule); border-radius: 8px; box-shadow: none; display: table; width: 100%;
+}
+.md-typeset table:not([class]) th {
+  background: transparent; color: var(--ax-muted); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase;
+  border-bottom: 1px solid var(--ax-rule); font-weight: 600;
+}
+.md-typeset table:not([class]) td { border-top: 1px solid var(--ax-rule); vertical-align: top; }
+.md-typeset table code { font-size: 0.72rem; }
+.md-typeset .ax-tablewrap { overflow-x: auto; margin: 1rem 0 1.6rem; }
+
+/* ---- asides --------------------------------------------------------- */
+.md-typeset .admonition, .md-typeset details {
+  border: 1px solid var(--ax-rule); border-left: 3px solid var(--ax-ctl); border-radius: 6px; box-shadow: none;
+  background: var(--ax-surface); font-size: 0.8rem;
+}
+.md-typeset .admonition-title, .md-typeset summary { background: transparent !important; font-weight: 600; }
+.md-typeset .admonition.warning, .md-typeset .admonition.danger { border-left-color: var(--ax-warn); }
+.md-typeset .admonition.tip, .md-typeset .admonition.success { border-left-color: var(--ax-loc); }
+.md-typeset .admonition::before, .md-typeset .admonition-title::before { display: none; }
+.md-typeset .admonition-title { padding-left: 0.6rem; }
+
+/* ---- limitation ledger --------------------------------------------- */
+.ax-ledger { border-top: 1px solid var(--ax-rule); margin: 1.2rem 0 2rem; }
+.ax-ledger > div {
+  display: grid; grid-template-columns: 15rem 1fr; gap: 0.4rem 2rem; padding: 0.85rem 0; border-bottom: 1px solid var(--ax-rule);
+}
+.ax-ledger b { font-weight: 600; }
+.ax-ledger span { color: var(--ax-muted); }
+.ax-ledger em { font-style: normal; font-family: var(--ax-mono); font-size: 0.7rem; color: var(--ax-ctl); display: block; margin-top: 0.25rem; }
+@media (max-width: 44rem) { .ax-ledger > div { grid-template-columns: 1fr; } }
+
+/* ---- reading-order key for the scenario ------------------------------ */
+.ax-steps { counter-reset: axs; list-style: none; padding: 0; margin: 1rem 0 1.6rem; max-width: 62rem; }
+.ax-steps li { counter-increment: axs; position: relative; padding: 0.2rem 0 0.2rem 2.4rem; }
+.ax-steps li::before {
+  content: counter(axs); position: absolute; left: 0; top: 0.28rem; width: 1.3rem; height: 1.3rem; border-radius: 50%;
+  background: var(--ax-ink); color: var(--ax-bg); font-size: 0.68rem; font-weight: 700; text-align: center; line-height: 1.3rem;
+}
+
+/* ---- SVG diagram vocabulary ------------------------------------------ */
+.ax-svg { display: block; width: 100%; height: auto; font-family: var(--ax-sans); }
+.ax-svg text { fill: var(--ax-ink); font-size: 14.5px; }
+.ax-svg .ax-t { font-size: 14.5px; }
+.ax-svg .ax-tb { font-size: 14.5px; font-weight: 600; }
+.ax-svg .ax-ts { font-size: 13px; fill: var(--ax-muted); }
+.ax-svg .ax-tm { font-family: var(--ax-mono); font-size: 12.5px; }
+.ax-svg .ax-tmb { font-family: var(--ax-mono); font-size: 12px; font-weight: 600; fill: var(--ax-ctl); }
+.ax-svg .ax-th { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; fill: var(--ax-muted); }
+.ax-svg .ax-fwt { font-size: 11px; font-weight: 700; letter-spacing: 0.34em; fill: var(--ax-fw-text); }
+.ax-svg .ax-badge-t { fill: var(--ax-bg); font-size: 12px; font-weight: 700; }
+.ax-svg .ax-warn { fill: var(--ax-warn); }
+.ax-svg .ax-ctlt { fill: var(--ax-ctl); }
+.ax-svg .ax-loct { fill: var(--ax-loc); }
+.ax-svg .ax-audt { fill: var(--ax-aud); }
+
+.ax-svg .ax-zone { fill: var(--ax-zone); stroke: var(--ax-zone-line); stroke-width: 1.2; }
+.ax-svg .ax-band { fill: var(--ax-band); stroke: var(--ax-zone-line); stroke-width: 1; }
+.ax-svg .ax-box { fill: var(--ax-surface); stroke: var(--ax-line); stroke-width: 1.2; }
+.ax-svg .ax-box-strong { stroke-width: 1.6; }
+.ax-svg .ax-box-ghost { fill: none; stroke-dasharray: 4 4; }
+.ax-svg .ax-box-agent { fill: var(--ax-ctl-tint); stroke: var(--ax-ctl); stroke-width: 1.6; }
+.ax-svg .ax-box-loc { fill: var(--ax-loc-tint); stroke: var(--ax-loc); stroke-width: 1.4; }
+.ax-svg .ax-box-aud { fill: none; stroke: var(--ax-aud); stroke-width: 1.4; }
+.ax-svg .ax-box-warn { fill: none; stroke: var(--ax-warn); stroke-width: 1.4; }
+.ax-svg .ax-host { fill: var(--ax-surface); stroke: var(--ax-line); stroke-width: 1.2; }
+.ax-svg .ax-chip { fill: var(--ax-chip); stroke: var(--ax-line); stroke-width: 1; }
+.ax-svg .ax-chip-agent, .ax-svg .ax-chip-ctl { fill: var(--ax-ctl-tint); stroke: var(--ax-ctl); stroke-width: 1.6; }
+.ax-svg .ax-chip-loc { fill: var(--ax-loc-tint); stroke: var(--ax-loc); stroke-width: 1.4; }
+.ax-svg .ax-dash { stroke-dasharray: 5 3; }
+.ax-svg .ax-callout { fill: var(--ax-ctl-tint); stroke: var(--ax-ctl); stroke-width: 1.2; }
+.ax-svg .ax-note { fill: none; stroke: var(--ax-line); stroke-dasharray: 3 4; }
+.ax-svg .ax-legend { fill: var(--ax-surface); stroke: var(--ax-line); }
+.ax-svg .ax-fw { fill: var(--ax-fw); }
+.ax-svg .ax-pill { fill: var(--ax-surface); stroke: var(--ax-ctl); stroke-width: 1.6; }
+.ax-svg .ax-badge { fill: var(--ax-ink); }
+.ax-svg .ax-rowline { stroke: var(--ax-rule); stroke-width: 1; fill: none; }
+.ax-svg .ax-hdrfill { fill: var(--ax-zone); stroke: none; }
+
+.ax-svg path { fill: none; }
+.ax-svg .ax-l-ctl { stroke: var(--ax-ctl); stroke-width: 2; }
+.ax-svg .ax-l-ctl-b { stroke: var(--ax-ctl); stroke-width: 3.2; }
+.ax-svg .ax-l-loc { stroke: var(--ax-loc); stroke-width: 2; stroke-dasharray: 2 4; stroke-linecap: round; }
+.ax-svg .ax-l-data { stroke: var(--ax-data); stroke-width: 1.8; }
+.ax-svg .ax-l-art { stroke: var(--ax-data); stroke-width: 1.8; stroke-dasharray: 8 5; }
+.ax-svg .ax-l-aud { stroke: var(--ax-aud); stroke-width: 1.8; stroke-dasharray: 7 4; }
+.ax-svg .ax-l-pki { stroke: var(--ax-pki); stroke-width: 1.6; stroke-dasharray: 1 4.5; stroke-linecap: round; }
+.ax-svg .ax-l-warn { stroke: var(--ax-warn); stroke-width: 1.8; stroke-dasharray: 7 4; }
+.ax-svg .ax-mk { stroke: none; }
+.ax-svg .ax-mk-ctl { fill: var(--ax-ctl); }
+.ax-svg .ax-mk-loc { fill: var(--ax-loc); }
+.ax-svg .ax-mk-data { fill: var(--ax-data); }
+.ax-svg .ax-mk-aud { fill: var(--ax-aud); }
+.ax-svg .ax-mk-pki { fill: var(--ax-pki); }
+
+/* ---- Mermaid: align with the same palette ------------------------------ */
+.mermaid { --md-mermaid-font-family: var(--ax-sans); }
+
+
+/* ---- small screens: diagrams scroll sideways, type scales down ------------ */
+@media (max-width: 44rem) {
+  .md-typeset h1.ax-title { font-size: 1.95rem; }
+  .ax-hero .ax-lede { font-size: 1.05rem; }
+  .md-typeset h2 { font-size: 1.4rem; margin-top: 3rem; }
+  .md-typeset figure.ax-fig { padding: 0.6rem 0.6rem 0.4rem; margin-left: -0.4rem; margin-right: -0.4rem; }
+  .md-typeset figure.ax-fig > .ax-scroll { min-width: 900px; }
+  .ax-facts > div { flex: 1 1 45%; }
+  .ax-ledger > div { gap: 0.2rem; }
+}
+
+/* ---- print: light palette, no chrome, A3 landscape ------------------------ */
+@page { size: A3 landscape; margin: 12mm; }
+@media print {
+  [data-md-color-scheme="slate"] {
+    --md-default-bg-color: #ffffff; --md-default-fg-color: #1c2430; --md-default-fg-color--lighter: #8792a2; --md-typeset-a-color: #1f4fd8;
+    --md-code-fg-color: #1c2430; --md-code-bg-color: #f1efe9; --md-accent-fg-color: #1f4fd8;
+    --md-accent-fg-color--transparent: #1f4fd81a; --md-accent-bg-color: #ffffff;
+    --ax-bg: #ffffff; --ax-ink: #1c2430; --ax-muted: #4f5a6a; --ax-rule: #d6d3ca; --ax-zone: #f4f2ec; --ax-zone-line: #c9c5b9;
+    --ax-band: #ffffff; --ax-surface: #ffffff; --ax-chip: #f6f5f1; --ax-line: #8f8d84; --ax-ctl: #1f4fd8; --ax-ctl-tint: #e8eefc;
+    --ax-loc: #0b766b; --ax-loc-tint: #e1f3f0; --ax-data: #6b7686; --ax-aud: #a45f0a; --ax-pki: #7b8696; --ax-fw: #1c2430;
+    --ax-fw-text: #ffffff; --ax-warn: #a8431a;
+  }
+  html, body, .md-main, .md-content { background: #fff !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .md-header, .md-tabs, .md-sidebar, .md-footer, .md-top, .md-search, .headerlink, nav.md-nav { display: none !important; }
+  .md-grid, .md-main__inner, .md-content, .md-content__inner { max-width: none !important; margin: 0 !important; padding: 0 !important; }
+  .md-typeset { font-size: 10.5pt; }
+  .md-typeset h2 { break-before: page; margin-top: 0; }
+  .md-typeset h2:first-of-type { break-before: auto; }
+  figure.ax-fig, .ax-ledger > div, table, pre { break-inside: avoid; }
+  figure.ax-fig { border: 0; padding: 0; overflow: visible; margin: 0 0 8mm; }
+  figure.ax-fig svg.ax-svg { max-height: 228mm; width: 100%; height: auto; }
+  figure.ax-fig:has(.mermaid) { break-inside: auto; }
+  .md-typeset figure.ax-fig .mermaid { display: block; width: 100%; }
+  .md-typeset figure.ax-fig .mermaid svg { width: 100%; max-width: 100%; }
+  figure.ax-fig > .ax-scroll { min-width: 0 !important; }
+  .md-typeset a { color: inherit; }
+}

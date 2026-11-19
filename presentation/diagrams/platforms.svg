@@ -1,0 +1,117 @@
+<svg class="ax-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 1012" role="img" aria-labelledby="plat-t plat-d"><title id="plat-t">Linux and Windows implementations side by side</title><desc id="plat-d">Ten implementation concerns compared for the Linux (systemd) and Windows (service) builds, each with its source reference. Windows has no forwarded audit sink and unsigned binaries.</desc><defs><marker id="plat-m-ctl" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-ctl"/></marker><marker id="plat-m-loc" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-loc"/></marker><marker id="plat-m-data" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-data"/></marker><marker id="plat-m-aud" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-aud"/></marker><marker id="plat-m-pki" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ax-mk ax-mk-pki"/></marker></defs>
+<rect x="20" y="14" width="1300" height="62" rx="8" class="ax-hdrfill"/>
+<text x="40" y="52" class="ax-th">CONCERN</text>
+<text x="252" y="44" class="ax-tb">LINUX</text>
+<text x="252" y="62" class="ax-ts">systemd, RHEL-family; the primary target</text>
+<text x="806" y="44" class="ax-tb">WINDOWS</text>
+<text x="806" y="62" class="ax-ts">Server 2022, Windows 10/11 Pro; validated on real hosts</text>
+<text x="40" y="120" class="ax-tb">Service manager</text>
+<text x="40" y="139" class="ax-tm">01</text>
+<rect x="236" y="92" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="118" class="ax-t">systemd unit, User=axiom, Restart=on-failure</text>
+<text x="252" y="138" class="ax-ts">install does not start it: enable --now is an operator step</text>
+<text x="252" y="160" class="ax-tm">packaging/axiom.service</text>
+<rect x="790" y="92" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="118" class="ax-t">SCM service "axiom", automatic start, 3 restarts at 5 s</text>
+<text x="806" y="138" class="ax-ts">config.Load runs after StartPending: a bad config exits 13</text>
+<text x="806" y="160" class="ax-tm">cmd/axiom/service_windows.go</text>
+<path d="M20,178 H1320" class="ax-rowline"/>
+<text x="40" y="210" class="ax-tb">Service identity</text>
+<text x="40" y="229" class="ax-tm">02</text>
+<rect x="236" y="182" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="208" class="ax-t">dedicated axiom system user, no shell, no home created</text>
+<text x="252" y="228" class="ax-ts">CapabilityBoundingSet empty, NoNewPrivileges=true</text>
+<text x="252" y="250" class="ax-tm">preinstall.sh, packaging/axiom.service</text>
+<rect x="790" y="182" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="208" class="ax-t">virtual account NT SERVICE\axiom, no password</text>
+<text x="806" y="228" class="ax-ts">not Administrators or SYSTEM; holds SeImpersonatePrivilege</text>
+<text x="806" y="250" class="ax-tm">service_windows.go, validation report</text>
+<path d="M20,268 H1320" class="ax-rowline"/>
+<text x="40" y="300" class="ax-tb">File integrity at startup</text>
+<text x="40" y="319" class="ax-tm">03</text>
+<rect x="236" y="272" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="298" class="ax-t">root-owned, no group or world write, no symlinks, every ancestor</text>
+<text x="252" y="318" class="ax-ts">private key at most 0640; otherwise Axiom refuses to start</text>
+<text x="252" y="340" class="ax-tm">config/script_security_unix.go</text>
+<rect x="790" y="272" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="298" class="ax-t">owner Administrators / SYSTEM / TrustedInstaller; no write DACL</text>
+<text x="806" y="318" class="ax-ts">to anyone else, service account included; reparse points refused</text>
+<text x="806" y="340" class="ax-tm">internal/winsec/winsec_windows.go</text>
+<path d="M20,358 H1320" class="ax-rowline"/>
+<text x="40" y="390" class="ax-tb">How a script is launched</text>
+<text x="40" y="409" class="ax-tm">04</text>
+<rect x="236" y="362" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="388" class="ax-t">direct exec of the configured script, never through a shell</text>
+<text x="252" y="408" class="ax-ts">no argument or executable field exists in the Spec</text>
+<text x="252" y="430" class="ax-tm">executor/launch_unix.go</text>
+<rect x="790" y="362" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="388" class="ax-t">fixed powershell.exe -NoProfile -NonInteractive</text>
+<text x="806" y="408" class="ax-ts">-ExecutionPolicy Bypass -File &lt;script.ps1&gt;; interpreter ACL-checked</text>
+<text x="806" y="430" class="ax-tm">executor/launch_windows.go</text>
+<path d="M20,448 H1320" class="ax-rowline"/>
+<text x="40" y="480" class="ax-tb">Environment</text>
+<text x="40" y="499" class="ax-tm">05</text>
+<rect x="236" y="452" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="478" class="ax-t">PATH fixed to system directories, nothing inherited</text>
+<text x="252" y="498" class="ax-ts">plus AXIOM_JOB_ID, AXIOM_ACTION, AXIOM_PARAM_&lt;NAME&gt;</text>
+<text x="252" y="520" class="ax-tm">jobs/env_unix.go</text>
+<rect x="790" y="452" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="478" class="ax-t">allowlist of system variables (SystemRoot, Path, TEMP ...)</text>
+<text x="806" y="498" class="ax-ts">plus AXIOM_JOB_ID, AXIOM_ACTION, AXIOM_PARAM_&lt;NAME&gt;</text>
+<text x="806" y="520" class="ax-tm">jobs/env_windows.go</text>
+<path d="M20,538 H1320" class="ax-rowline"/>
+<text x="40" y="570" class="ax-tb">Containment and stop</text>
+<text x="40" y="589" class="ax-tm">06</text>
+<rect x="236" y="542" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="568" class="ax-t">own process group; SIGTERM to the group, 5 s grace, SIGKILL</text>
+<text x="252" y="588" class="ax-ts">the script gets a bounded chance to clean up</text>
+<text x="252" y="610" class="ax-tm">executor/process_unix.go</text>
+<rect x="790" y="542" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="568" class="ax-t">Job Object; terminate equals kill, no cooperative grace</text>
+<text x="806" y="588" class="ax-ts">the whole tree dies at once</text>
+<text x="806" y="610" class="ax-tm">executor/process_windows.go</text>
+<path d="M20,628 H1320" class="ax-rowline"/>
+<text x="40" y="660" class="ax-tb">If Axiom itself dies</text>
+<text x="40" y="679" class="ax-tm">07</text>
+<rect x="236" y="632" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="658" class="ax-t">Pdeathsig=SIGKILL reaches the direct child; systemd kills</text>
+<text x="252" y="678" class="ax-ts">the rest of the control group when the unit stops</text>
+<text x="252" y="700" class="ax-tm">process_unix.go, axiom.service</text>
+<rect x="790" y="632" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="658" class="ax-t">the job handle closes with the process (KILL_ON_JOB_CLOSE)</text>
+<text x="806" y="678" class="ax-ts">so every descendant is torn down</text>
+<text x="806" y="700" class="ax-tm">executor/process_windows.go</text>
+<path d="M20,718 H1320" class="ax-rowline"/>
+<text x="40" y="750" class="ax-tb">Sandbox</text>
+<text x="40" y="769" class="ax-tm">08</text>
+<rect x="236" y="722" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="748" class="ax-t">ProtectSystem=strict, ProtectHome, PrivateTmp, restricted address</text>
+<text x="252" y="768" class="ax-ts">families; writable: /var/log/axiom and /var/lib/axiom only</text>
+<text x="252" y="790" class="ax-tm">packaging/axiom.service</text>
+<rect x="790" y="722" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="748" class="ax-t">NTFS ACLs: service reads and executes binary, config, scripts;</text>
+<text x="806" y="768" class="ax-ts">modify only on logs\ (and its own temp)</text>
+<text x="806" y="790" class="ax-tm">packaging/windows/README.md</text>
+<path d="M20,808 H1320" class="ax-rowline"/>
+<text x="40" y="840" class="ax-tb">Audit storage</text>
+<text x="40" y="859" class="ax-tm">09</text>
+<rect x="236" y="812" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="838" class="ax-t">audit.log (JSONL, fsync) plus optional journald / syslog sink</text>
+<text x="252" y="858" class="ax-ts">the central collector is the authoritative copy</text>
+<text x="252" y="880" class="ax-tm">audit/syslog_unix.go</text>
+<rect x="790" y="812" width="530" height="82" rx="6" class="ax-box ax-box-warn"/>
+<text x="806" y="838" class="ax-t">local audit.log only (JSONL, fsync); no forwarding sink</text>
+<text x="806" y="858" class="ax-ts">axiom.log and the Event Log hold diagnostics, not audit</text>
+<text x="806" y="880" class="ax-tm">config/defaults_windows.go</text>
+<path d="M20,898 H1320" class="ax-rowline"/>
+<text x="40" y="930" class="ax-tb">Packaging and trust</text>
+<text x="40" y="949" class="ax-tm">10</text>
+<rect x="236" y="902" width="538" height="82" rx="6" class="ax-box"/>
+<text x="252" y="928" class="ax-t">RPM (nfpm) and install.sh; RPMs and SHA256SUMS GPG-signed</text>
+<text x="252" y="948" class="ax-ts">SELinux enforcing validated on one Rocky Linux 9.8 host</text>
+<text x="252" y="970" class="ax-tm">packaging/rpm, scripts/sign-release.sh</text>
+<rect x="790" y="902" width="530" height="82" rx="6" class="ax-box ax-box-warn"/>
+<text x="806" y="928" class="ax-t">MSI (WiX) or zip with Install-Axiom.ps1; SHA256SUMS signed</text>
+<text x="806" y="948" class="ax-ts">binaries and MSI are not Authenticode-signed</text>
+<text x="806" y="970" class="ax-tm">packaging/windows, README.md</text>
+</svg>
