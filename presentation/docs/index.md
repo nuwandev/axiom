@@ -21,7 +21,7 @@ title: Architecture presentation
 <ol class="ax-index">
 <li><a href="#introduction">Introduction</a><span>What Axiom is, what it is not, how to read this page</span></li>
 <li><a href="#environment">The banking infrastructure environment</a><span>CI/CD zone, firewall, bank zone and every traffic class</span></li>
-<li><a href="#topology">Axiom deployment topology</a><span>One agent per host, and what the network must allow</span></li>
+<li><a href="#topology">Axiom deployment topology</a><span>The agent on a managed host, and what the network must allow</span></li>
 <li><a href="#scenario">End-to-end deployment scenario</a><span>From a developer commit to a polled result</span></li>
 <li><a href="#internals">Internal architecture</a><span>Packages, responsibilities and source locations</span></li>
 <li><a href="#lifecycle">Request lifecycle</a><span>The audited path, including every rejection</span></li>
@@ -57,13 +57,13 @@ Sections 2 to 4 are about deployment. Sections 5 to 12 are about the implementat
 
 ## 2. The banking infrastructure environment {#environment}
 
-Three areas matter. An engineering zone runs Jenkins and the build. A perimeter firewall separates it from the bank network. Inside the bank zone, customer traffic flows through web, application and database tiers, and a separate path carries Axiom's control traffic to a small agent on each managed host.
+Three areas matter. An engineering zone runs Jenkins and the build. A perimeter firewall separates it from the bank network. Inside the bank zone, customer traffic flows through web, application and database tiers, and a separate path carries Axiom's control traffic to the agent on the host being deployed to. In this example that is the application server.
 
 <figure class="ax-fig" id="fig-topology" markdown>
 <div class="ax-scroll">
 --8<-- "topology.svg"
 </div>
-<figcaption>Figure 1. Illustrative banking deployment. Blue is Axiom's control plane, teal is local execution, grey is customer application traffic, amber is audit forwarding. Numbered badges follow the scenario in section 4. Port 8443 is the value in the shipped example configuration; the operator sets it.</figcaption>
+<figcaption>Figure 1. Illustrative banking deployment. Blue is Axiom's control plane, teal is local execution, grey is customer application traffic, amber is audit forwarding. Numbered badges follow the scenario in section 4. Only the application server runs an agent in this example; the web and database hosts do not. Port 8443 is the value in the shipped example configuration; the operator sets it.</figcaption>
 </figure>
 
 Reading the figure:
@@ -86,11 +86,11 @@ Audit and certificates
 !!! warning "No TLS-terminating device in the Axiom path"
     The agent takes the caller's identity from the client certificate presented on the TCP connection it terminates (`internal/api/middleware.go`, `withIdentity`). There is no forwarded-header support. A reverse proxy or a TLS-terminating WAF between Jenkins and the agent would remove the certificate and break authentication. Direct connections or Layer 4 TCP passthrough are the only supported shapes.
 
-The database tier shows an agent drawn with a dashed outline. It is optional: it exists only if the bank needs Jenkins to trigger an action that must run on the database host itself. Application-to-database SQL has no relationship to it.
+The web and database hosts run no agent in this example. A host gets one only when Jenkins must trigger an action on that host itself, such as a local operation on the database host. Application-to-database SQL has no relationship to Axiom.
 
 ## 3. Axiom deployment topology {#topology}
 
-Each managed host runs its own agent with its own configuration, its own server certificate and its own allowlist. Agents do not know about one another, and nothing aggregates them. A pipeline that deploys to four hosts makes four independent requests.
+A host that Jenkins must act on runs its own agent, with its own configuration, its own server certificate and its own allowlist. Agents do not know about one another, and nothing aggregates them. A pipeline that deploys to four hosts makes four independent requests.
 
 <figure class="ax-fig" id="fig-host" markdown>
 <div class="ax-scroll">
