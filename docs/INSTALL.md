@@ -561,6 +561,11 @@ sudo cp /usr/local/bin/axiom.previous /usr/local/bin/axiom
 sudo systemctl start axiom
 ```
 
+Rolling back from v2.1.0 to v2.0.x also needs the configuration put back if
+it uses `jobs.max_triggers_per_minute` (or `audit.syslog` on Windows): v2.0.x
+rejects unknown keys, and refuses `audit.syslog` on Windows, so it will not start
+until they are removed.
+
 Rolling back from v2.x to v1.2.1 also needs the configuration put back:
 v1.2.1 rejects unknown keys, so a v2.0.0 config containing any of
 `audit.syslog`, `jobs.max_concurrent` or `security.allow_service_owned_files`

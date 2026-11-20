@@ -2,8 +2,10 @@
 
 **On Linux?** See [`getting-started.md`](getting-started.md) instead.
 
-**Audit scope:** the Windows build writes a local audit file. Forwarding
-to a central collector (`audit.syslog`) is available on the Linux build.
+**Audit scope:** the Windows build writes a local audit file and, with
+`audit.syslog: true`, also writes every record to the Application event log
+(source `axiom`) for forwarding to a central collector. See
+[`configuration.md`](configuration.md#audit-log).
 
 Generic by design: no company-specific hosts, IPs, or credentials.
 
