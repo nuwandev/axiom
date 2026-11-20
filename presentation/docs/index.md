@@ -332,9 +332,9 @@ Memory, not storage
 An accepted-through-finished sequence for one job, as it appears in the file (one JSON object per line):
 
 ```json
-{"timestamp":"2026-11-20T09:14:03.398Z","agent":"example-app-01","event":"accepted","job_id":"01J8ZQ4M6T3N7V2K9R5W0XDHBE","identity":"ci-jenkins","action":"your.deploy","parameters":{"image_tag":"build-1842"}}
-{"timestamp":"2026-11-20T09:14:03.412Z","agent":"example-app-01","event":"started","job_id":"01J8ZQ4M6T3N7V2K9R5W0XDHBE","identity":"ci-jenkins","action":"your.deploy"}
-{"timestamp":"2026-11-20T09:14:41.907Z","agent":"example-app-01","event":"finished","job_id":"01J8ZQ4M6T3N7V2K9R5W0XDHBE","identity":"ci-jenkins","action":"your.deploy","result":"succeeded","duration_ms":38495}
+{"timestamp":"2026-11-20T09:14:03.3981204Z","agent":"example-app-01","event":"accepted","job_id":"01J8ZQ4M6T3N7V2K9R5W0XDHBE","identity":"ci-jenkins","action":"your.deploy","parameters":{"image_tag":"build-1842"}}
+{"timestamp":"2026-11-20T09:14:03.4125533Z","agent":"example-app-01","event":"started","job_id":"01J8ZQ4M6T3N7V2K9R5W0XDHBE","identity":"ci-jenkins","action":"your.deploy"}
+{"timestamp":"2026-11-20T09:14:41.9071882Z","agent":"example-app-01","event":"finished","job_id":"01J8ZQ4M6T3N7V2K9R5W0XDHBE","identity":"ci-jenkins","action":"your.deploy","result":"succeeded","duration_ms":38495}
 ```
 
 What the audit trail guarantees, and what it does not

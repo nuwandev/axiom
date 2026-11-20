@@ -19,7 +19,7 @@
 <text x="40" y="210" class="ax-tb">Service identity</text>
 <text x="40" y="229" class="ax-tm">02</text>
 <rect x="236" y="182" width="538" height="82" rx="6" class="ax-box"/>
-<text x="252" y="208" class="ax-t">dedicated axiom system user, no shell, no home created</text>
+<text x="252" y="208" class="ax-t">dedicated axiom system user, no login shell, home /var/lib/axiom</text>
 <text x="252" y="228" class="ax-ts">CapabilityBoundingSet empty, NoNewPrivileges=true</text>
 <text x="252" y="250" class="ax-tm">preinstall.sh, packaging/axiom.service</text>
 <rect x="790" y="182" width="530" height="82" rx="6" class="ax-box"/>
@@ -89,8 +89,8 @@
 <text x="252" y="768" class="ax-ts">families; writable: /var/log/axiom and /var/lib/axiom only</text>
 <text x="252" y="790" class="ax-tm">packaging/axiom.service</text>
 <rect x="790" y="722" width="530" height="82" rx="6" class="ax-box"/>
-<text x="806" y="748" class="ax-t">NTFS ACLs: service reads and executes binary, config, scripts;</text>
-<text x="806" y="768" class="ax-ts">modify only on logs\ (and its own temp)</text>
+<text x="806" y="748" class="ax-t">NTFS ACLs: service reads and executes binary and scripts,</text>
+<text x="806" y="768" class="ax-ts">reads config and certs; modify only on logs\ and its own temp</text>
 <text x="806" y="790" class="ax-tm">packaging/windows/README.md</text>
 <path d="M20,808 H1320" class="ax-rowline"/>
 <text x="40" y="840" class="ax-tb">Audit storage</text>

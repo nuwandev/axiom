@@ -75,7 +75,7 @@
 <text x="576" y="631" class="ax-tm">internal/audit/audit.go · Logger.Write</text>
 <text x="576" y="656" class="ax-t">stamp, truncate to 512 B, redact secret names</text>
 <text x="576" y="674" class="ax-t">append JSONL line, fsync, then each Sink</text>
-<text x="576" y="692" class="ax-t">error returned: callers fail closed</text>
+<text x="576" y="692" class="ax-t">error returned: accepted, started fail closed</text>
 <text x="576" y="710" class="ax-t">Sink: syslog on unix, none on Windows</text>
 <rect x="1080" y="586" width="460" height="168" rx="8" class="ax-box ax-box-loc"/>
 <text x="1096" y="612" class="ax-tb">Executor</text>

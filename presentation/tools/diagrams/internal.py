@@ -72,7 +72,7 @@ box(*cfg, "Configuration", "internal/config/config.go \u00b7 Load, validate",
      "parameter patterns compiled as ^(?:\u2026)$", "script, cert, key, ancestor integrity", "read once: no hot reload"])
 box(*aud, "Audit subsystem", "internal/audit/audit.go \u00b7 Logger.Write",
     ["stamp, truncate to 512 B, redact secret names", "append JSONL line, fsync, then each Sink",
-     "error returned: callers fail closed", "Sink: syslog on unix, none on Windows"], "ax-box ax-box-aud")
+     "error returned: accepted, started fail closed", "Sink: syslog on unix, none on Windows"], "ax-box ax-box-aud")
 box(*exe, "Executor", "internal/executor/executor.go \u00b7 Run",
     ["Spec: script path, env, timeout, output cap", "no argv or executable field in Spec",
      "timeout: terminate, 5 s grace, kill", "capped stdout / stderr buffers"], "ax-box ax-box-loc")
