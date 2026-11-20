@@ -1,0 +1,15 @@
+flowchart TD
+    accTitle: Authentication and authorization flow
+    accDescr: Handshake, per-request certificate verification, identity from the Common Name, action-name validation and the default-deny allowlist.
+    A["TCP connection to the agent port"] --> B{{"Handshake: client certificate required and valid?"}}
+    B -- "no, default mode" --> X1["Handshake fails<br/>no HTTP response, no audit record"]
+    B -- "yes, or anonymous-health mode" --> C{{"auth.Verify passes on this request?"}}
+    C -- "no" --> D{{"Path is /health and anonymous health is on?"}}
+    D -- "yes" --> H["Serve /health"]
+    D -- "no" --> R1["Audit rejected, answer 401"]
+    C -- "yes" --> E["Identity is the certificate Common Name"]
+    E --> F{{"Action name well formed?"}}
+    F -- "no" --> R2["Answer 400"]
+    F -- "yes" --> G{{"Action in this identity's allowlist?"}}
+    G -- "no, or identity unknown" --> R3["Audit rejected, answer 403"]
+    G -- "yes" --> I["Validate body and parameters, then Trigger"]

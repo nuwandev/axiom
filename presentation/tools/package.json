@@ -1,0 +1,8 @@
+{
+  "name": "axiom-presentation-tools",
+  "private": true,
+  "description": "Pre-renders the presentation's Mermaid sources to static SVG. Used only when diagrams change; building the site needs no Node.",
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "12.2.0"
+  }
+}

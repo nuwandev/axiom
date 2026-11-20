@@ -132,44 +132,9 @@ Each managed host runs its own agent with its own configuration, its own server 
 </ol>
 
 <figure class="ax-fig" markdown>
-```mermaid
----
-config:
-  sequence:
-    actorMargin: 24
-    width: 118
-    boxMargin: 6
-    messageMargin: 30
-    noteMargin: 6
-    diagramMarginX: 20
----
-sequenceDiagram
-    actor Dev as Developer
-    participant J as Jenkins
-    participant R as Registry
-    participant A as Axiom agent
-    participant S as Script
-    Dev->>J: 1 trigger pipeline
-    J->>J: 2-3 checkout, build, test
-    J->>R: 3 publish artifact
-    Note over J: 4 deploy stage loads the client cert
-    J->>A: 5 POST /v1/actions/your.deploy
-    Note over J,A: 6 firewall allows TCP 8443, no TLS termination
-    A->>A: 7 authenticate, authorize
-    A->>A: 8 audit accepted, create job
-    A-->>J: 202 job_id, queued
-    A->>S: 9 audit started, exec script
-    S->>R: optional: pull artifact
-    loop 10 poll until terminal
-        J->>A: GET /v1/jobs/job_id
-        A-->>J: queued, running, terminal
-    end
-    S-->>A: exit code
-    A->>A: audit finished
-    J->>A: GET /v1/jobs/job_id
-    A-->>J: 11 succeeded, exit_code 0
-    Note over A,J: the agent never calls Jenkins back
-```
+<div class="ax-mmd">
+--8<-- "mermaid/scenario.svg"
+</div>
 <figcaption>Figure 3. The deployment scenario. Responses travel on the connection Jenkins opened. Only Jenkins initiates.</figcaption>
 </figure>
 
@@ -285,65 +250,9 @@ Implementation notes
 ## 6. Request lifecycle {#lifecycle}
 
 <figure class="ax-fig" id="fig-lifecycle" markdown>
-```mermaid
----
-config:
-  sequence:
-    actorMargin: 24
-    width: 118
-    boxMargin: 6
-    messageMargin: 30
-    noteMargin: 6
-    diagramMarginX: 20
----
-sequenceDiagram
-    participant C as Client
-    participant T as TLS listener
-    participant M as withIdentity
-    participant H as Handlers
-    participant J as Job manager
-    participant L as Audit log
-    participant X as Executor
-    C->>T: ClientHello + client certificate
-    alt invalid or missing certificate
-        T--xC: handshake fails, no audit record
-    end
-    T->>M: HTTP request over TLS
-    M->>M: auth.Verify: chain, EKU, validity, CN
-    alt fails (anonymous /health mode)
-        M->>L: rejected: unauthenticated
-        M-->>C: 401
-    end
-    M->>H: request, identity = CN
-    H->>H: action regex, allowlist check
-    alt not allowlisted
-        H->>L: rejected: unauthorized
-        H-->>C: 403
-    end
-    H->>H: content type, size, JSON, caps
-    H->>J: Trigger(action, CN, params)
-    J->>J: schema, exclusive lock, slot
-    alt 400, 409, 429 or 503
-        J-->>H: error
-        H-->>C: status, no job created
-    end
-    J->>L: accepted (write, fsync, sinks)
-    alt audit failure
-        J-->>H: refuse, job removed
-        H-->>C: 500
-    end
-    J-->>H: job queued
-    H-->>C: 202 job_id
-    Note over J,X: asynchronous from here
-    J->>L: started (before any process)
-    alt audit failure
-        J->>J: job failed, script not run
-    end
-    J->>X: Run(spec)
-    X->>X: start script, contain tree
-    X-->>J: exit, timeout or cancel
-    J->>L: finished (best effort)
-```
+<div class="ax-mmd">
+--8<-- "mermaid/lifecycle.svg"
+</div>
 <figcaption>Figure 5. One request, with the rejection and failure paths. Audit records are written in the order accepted, started, finished, and the first two gate execution.</figcaption>
 </figure>
 
@@ -360,29 +269,9 @@ sequenceDiagram
 ## 7. Authentication and authorization {#authn}
 
 <figure class="ax-fig ax-fig-tight" id="fig-authn" markdown>
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 460
-    nodeSpacing: 36
-    rankSpacing: 34
-    padding: 12
----
-flowchart TD
-    A["TCP connection to the agent port"] --> B{{"Handshake: client certificate required and valid?"}}
-    B -- "no, default mode" --> X1["Handshake fails<br/>no HTTP response, no audit record"]
-    B -- "yes, or anonymous-health mode" --> C{{"auth.Verify passes on this request?"}}
-    C -- "no" --> D{{"Path is /health and anonymous health is on?"}}
-    D -- "yes" --> H["Serve /health"]
-    D -- "no" --> R1["Audit rejected, answer 401"]
-    C -- "yes" --> E["Identity is the certificate Common Name"]
-    E --> F{{"Action name well formed?"}}
-    F -- "no" --> R2["Answer 400"]
-    F -- "yes" --> G{{"Action in this identity's allowlist?"}}
-    G -- "no, or identity unknown" --> R3["Audit rejected, answer 403"]
-    G -- "yes" --> I["Validate body and parameters, then Trigger"]
-```
+<div class="ax-mmd">
+--8<-- "mermaid/authn.svg"
+</div>
 <figcaption>Figure 6. Authentication, then authorization. An unlisted identity, an unlisted action and a misspelt action all receive the same 403.</figcaption>
 </figure>
 
@@ -403,48 +292,16 @@ flowchart TD
 ## 8. Job execution {#jobs}
 
 <figure class="ax-fig ax-fig-tight" id="fig-states" markdown>
-```mermaid
-stateDiagram-v2
-    [*] --> queued: accepted audit written
-    queued --> running: started audit written, process starts
-    queued --> failed: started audit write fails
-    queued --> cancelled: agent stopping before start
-    running --> succeeded: exit code 0
-    running --> failed: non-zero exit, timeout, start error, panic
-    running --> cancelled: shutdown cancels the job
-    succeeded --> [*]
-    failed --> [*]
-    cancelled --> [*]
-```
+<div class="ax-mmd">
+--8<-- "mermaid/states.svg"
+</div>
 <figcaption>Figure 7. Job states. A job is created in memory only after capacity is reserved, and leaves memory when history is trimmed or the agent restarts.</figcaption>
 </figure>
 
 <figure class="ax-fig ax-fig-tight" id="fig-admission" markdown>
-```mermaid
----
-config:
-  flowchart:
-    wrappingWidth: 460
-    nodeSpacing: 36
-    rankSpacing: 34
-    padding: 12
----
-flowchart TD
-    A["Trigger with action, identity, params"] --> B{{"Parameters declared and matching patterns?"}}
-    B -- "no" --> E1["400"]
-    B -- "yes" --> C{{"Action is exclusive?"}}
-    C -- "yes" --> D{{"Per-action lock free?"}}
-    D -- "no" --> E2["409 busy"]
-    D -- "yes" --> F
-    C -- "no" --> F{{"Agent stopping?"}}
-    F -- "yes" --> E3["503"]
-    F -- "no" --> G{{"Slots free, below max_concurrent?"}}
-    G -- "no" --> E4["429 with Retry-After"]
-    G -- "yes" --> H["Create the job as queued and store it"]
-    H --> I{{"accepted audit written and forwarded?"}}
-    I -- "no" --> E5["Remove job, release slot and lock, answer 500"]
-    I -- "yes" --> J["Start run in a goroutine, answer 202"]
-```
+<div class="ax-mmd">
+--8<-- "mermaid/admission.svg"
+</div>
 <figcaption>Figure 8. Admission control. A rejected trigger creates no job and leaves no lock or slot held.</figcaption>
 </figure>
 

@@ -1,0 +1,49 @@
+sequenceDiagram
+    accTitle: Request lifecycle sequence
+    accDescr: One request from the TLS handshake to the finished audit record, including the rejection and audit-failure paths.
+    participant C as Client
+    participant T as TLS listener
+    participant M as withIdentity
+    participant H as Handlers
+    participant J as Job manager
+    participant L as Audit log
+    participant X as Executor
+    C->>T: ClientHello + client certificate
+    alt invalid or missing certificate
+        T--xC: handshake fails, no audit record
+    end
+    T->>M: HTTP request over TLS
+    M->>M: auth.Verify: chain, EKU, validity, CN
+    alt fails (anonymous /health mode)
+        M->>L: rejected: unauthenticated
+        M-->>C: 401
+    end
+    M->>H: request, identity = CN
+    H->>H: action regex, allowlist check
+    alt not allowlisted
+        H->>L: rejected: unauthorized
+        H-->>C: 403
+    end
+    H->>H: content type, size, JSON, caps
+    H->>J: Trigger(action, CN, params)
+    J->>J: schema, exclusive lock, slot
+    alt 400, 409, 429 or 503
+        J-->>H: error
+        H-->>C: status, no job created
+    end
+    J->>L: accepted (write, fsync, sinks)
+    alt audit failure
+        J-->>H: refuse, job removed
+        H-->>C: 500
+    end
+    J-->>H: job queued
+    H-->>C: 202 job_id
+    Note over J,X: asynchronous from here
+    J->>L: started (before any process)
+    alt audit failure
+        J->>J: job failed, script not run
+    end
+    J->>X: Run(spec)
+    X->>X: start script, contain tree
+    X-->>J: exit, timeout or cancel
+    J->>L: finished (best effort)

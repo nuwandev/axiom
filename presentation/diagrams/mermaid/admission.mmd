@@ -1,0 +1,17 @@
+flowchart TD
+    accTitle: Job admission control
+    accDescr: Parameter validation, exclusive lock, shutdown check, slot cap and the accepted audit write that gate a trigger.
+    A["Trigger with action, identity, params"] --> B{{"Parameters declared and matching patterns?"}}
+    B -- "no" --> E1["400"]
+    B -- "yes" --> C{{"Action is exclusive?"}}
+    C -- "yes" --> D{{"Per-action lock free?"}}
+    D -- "no" --> E2["409 busy"]
+    D -- "yes" --> F
+    C -- "no" --> F{{"Agent stopping?"}}
+    F -- "yes" --> E3["503"]
+    F -- "no" --> G{{"Slots free, below max_concurrent?"}}
+    G -- "no" --> E4["429 with Retry-After"]
+    G -- "yes" --> H["Create the job as queued and store it"]
+    H --> I{{"accepted audit written and forwarded?"}}
+    I -- "no" --> E5["Remove job, release slot and lock, answer 500"]
+    I -- "yes" --> J["Start run in a goroutine, answer 202"]

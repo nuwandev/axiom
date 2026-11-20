@@ -1,0 +1,35 @@
+/* Appended to every pre-rendered Mermaid SVG (mmdc --cssFile).
+   Maps Mermaid's output onto the presentation's CSS variables so the diagrams
+   follow the light/dark switch and print in the light palette. The fallbacks
+   keep a diagram readable if the SVG is opened on its own. */
+
+svg { font-family: Arial, Helvetica, sans-serif !important; }
+p, span, div, .label, .nodeLabel, .edgeLabel { color: var(--ax-ink, #1c2430) !important; }
+
+/* sequence diagrams */
+.actor { fill: var(--ax-surface, #ffffff) !important; stroke: var(--ax-ctl, #1f4fd8) !important; }
+text.actor > tspan { fill: var(--ax-ink, #1c2430) !important; stroke: none !important; }
+.actor-line { stroke: var(--ax-line, #a9a79d) !important; }
+.actor-man circle, .actor-man line { fill: var(--ax-surface, #ffffff) !important; stroke: var(--ax-ctl, #1f4fd8) !important; }
+.messageLine0, .messageLine1 { stroke: var(--ax-ink, #1c2430) !important; }
+[id$="-arrowhead"] path, [id$="-crosshead"] path { fill: var(--ax-ink, #1c2430) !important; stroke: var(--ax-ink, #1c2430) !important; }
+.messageText, .noteText, .noteText > tspan, .loopText, .loopText > tspan, .labelText, .labelText > tspan { fill: var(--ax-ink, #1c2430) !important; stroke: none !important; }
+.sequenceNumber { fill: var(--ax-bg, #fbfaf7) !important; }
+[id$="-sequencenumber"] { fill: var(--ax-ink, #1c2430) !important; }
+.labelBox { fill: var(--ax-ctl-tint, #e8eefc) !important; stroke: var(--ax-ctl, #1f4fd8) !important; }
+.loopLine { stroke: var(--ax-ctl, #1f4fd8) !important; }
+.note { fill: var(--ax-zone, #f4f2ec) !important; stroke: var(--ax-line, #a9a79d) !important; }
+g rect.rect { fill: var(--ax-zone, #f4f2ec) !important; stroke: var(--ax-line, #a9a79d) !important; }
+
+/* flowcharts and state diagrams */
+.node rect, .node circle, .node ellipse, .node polygon, .node path,
+g.stateGroup rect, .statediagram-state rect.basic {
+  fill: var(--ax-ctl-tint, #e8eefc) !important; stroke: var(--ax-ctl, #1f4fd8) !important;
+}
+.cluster rect { fill: var(--ax-zone, #f4f2ec) !important; stroke: var(--ax-zone-line, #c9c5b9) !important; }
+.edgePaths .path, .flowchart-link, .transition { stroke: var(--ax-ink, #1c2430) !important; }
+.arrowheadPath, .marker, .marker.cross, [id$="-barbEnd"] { fill: var(--ax-ink, #1c2430) !important; stroke: var(--ax-ink, #1c2430) !important; }
+.edgeLabel, .edgeLabel p, .edgeLabel rect, .labelBkg, .edgeLabel .label rect { background-color: var(--ax-surface, #ffffff) !important; fill: var(--ax-surface, #ffffff) !important; opacity: 1; }
+.label text, .nodeLabel, g.stateGroup text, .stateLabel text { fill: var(--ax-ink, #1c2430) !important; }
+.node circle.state-start, .node circle.state-end, .end-state-inner { fill: var(--ax-ink, #1c2430) !important; stroke: var(--ax-ink, #1c2430) !important; }
+.statediagram-state .divider, g.stateGroup line { stroke: var(--ax-line, #a9a79d) !important; }

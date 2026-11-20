@@ -159,9 +159,9 @@ body, .md-typeset { font-family: var(--ax-sans); }
   font-size: 0.74rem; color: var(--ax-muted); padding: 0.7rem 0.2rem 0.2rem; border-top: 1px solid var(--ax-rule); margin-top: 0.6rem;
   min-width: 0; max-width: none; text-align: left; font-style: normal; font-family: var(--ax-sans);
 }
-.md-typeset figure.ax-fig .mermaid { display: flex; justify-content: center; padding: 0.4rem 0; }
-.md-typeset figure.ax-fig .mermaid svg { max-width: 100%; height: auto; }
-.ax-fig.ax-fig-tight { max-width: 62rem; }
+.md-typeset figure.ax-fig .ax-mmd { padding: 0.4rem 0; }
+.md-typeset figure.ax-fig .ax-mmd svg { display: block; width: 100%; max-width: 1500px !important; height: auto; margin: 0 auto; }
+.md-typeset figure.ax-fig.ax-fig-tight { max-width: 1020px; }
 
 /* ---- reference tables ---------------------------------------------- */
 .md-typeset table:not([class]) {
@@ -259,9 +259,6 @@ body, .md-typeset { font-family: var(--ax-sans); }
 .ax-svg .ax-mk-aud { fill: var(--ax-aud); }
 .ax-svg .ax-mk-pki { fill: var(--ax-pki); }
 
-/* ---- Mermaid: align with the same palette ------------------------------ */
-.mermaid { --md-mermaid-font-family: var(--ax-sans); }
-
 
 /* ---- small screens: diagrams scroll sideways, type scales down ------------ */
 @media (max-width: 44rem) {
@@ -270,6 +267,8 @@ body, .md-typeset { font-family: var(--ax-sans); }
   .md-typeset h2 { font-size: 1.4rem; margin-top: 3rem; }
   .md-typeset figure.ax-fig { padding: 0.6rem 0.6rem 0.4rem; margin-left: -0.4rem; margin-right: -0.4rem; }
   .md-typeset figure.ax-fig > .ax-scroll { min-width: 900px; }
+  .md-typeset figure.ax-fig .ax-mmd { overflow-x: auto; }
+  .md-typeset figure.ax-fig .ax-mmd svg { min-width: 760px; }
   .ax-facts > div { flex: 1 1 45%; }
   .ax-ledger > div { gap: 0.2rem; }
 }
@@ -295,10 +294,7 @@ body, .md-typeset { font-family: var(--ax-sans); }
   .md-typeset h2:first-of-type { break-before: auto; }
   figure.ax-fig, .ax-ledger > div, table, pre { break-inside: avoid; }
   figure.ax-fig { border: 0; padding: 0; overflow: visible; margin: 0 0 8mm; }
-  figure.ax-fig svg.ax-svg { max-height: 228mm; width: 100%; height: auto; }
-  figure.ax-fig:has(.mermaid) { break-inside: auto; }
-  .md-typeset figure.ax-fig .mermaid { display: block; width: 100%; }
-  .md-typeset figure.ax-fig .mermaid svg { width: 100%; max-width: 100%; }
+  figure.ax-fig svg.ax-svg, .md-typeset figure.ax-fig .ax-mmd svg { max-height: 228mm; width: 100%; height: auto; }
   figure.ax-fig > .ax-scroll { min-width: 0 !important; }
   .md-typeset a { color: inherit; }
 }

@@ -1,0 +1,28 @@
+sequenceDiagram
+    accTitle: Deployment scenario sequence
+    accDescr: Eleven numbered steps from a developer triggering a Jenkins pipeline to Jenkins reading the terminal job status. Jenkins always initiates, and the agent never calls back.
+    actor Dev as Developer
+    participant J as Jenkins
+    participant R as Registry
+    participant A as Axiom agent
+    participant S as Script
+    Dev->>J: 1 trigger pipeline
+    J->>J: 2-3 checkout, build, test
+    J->>R: 3 publish artifact
+    Note over J: 4 deploy stage loads the client cert
+    J->>A: 5 POST /v1/actions/your.deploy
+    Note over J,A: 6 firewall allows TCP 8443, no TLS termination
+    A->>A: 7 authenticate, authorize
+    A->>A: 8 audit accepted, create job
+    A-->>J: 202 job_id, queued
+    A->>S: 9 audit started, exec script
+    S->>R: optional: pull artifact
+    loop 10 poll until terminal
+        J->>A: GET /v1/jobs/job_id
+        A-->>J: queued, running, terminal
+    end
+    S-->>A: exit code
+    A->>A: audit finished
+    J->>A: GET /v1/jobs/job_id
+    A-->>J: 11 succeeded, exit_code 0
+    Note over A,J: the agent never calls Jenkins back

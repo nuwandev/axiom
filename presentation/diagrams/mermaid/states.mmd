@@ -1,0 +1,13 @@
+stateDiagram-v2
+    accTitle: Job state machine
+    accDescr: Jobs move from queued to running and end succeeded, failed or cancelled.
+    [*] --> queued: accepted audit written
+    queued --> running: started audit written, process starts
+    queued --> failed: started audit write fails
+    queued --> cancelled: agent stopping before start
+    running --> succeeded: exit code 0
+    running --> failed: non-zero exit, timeout, start error, panic
+    running --> cancelled: shutdown cancels the job
+    succeeded --> [*]
+    failed --> [*]
+    cancelled --> [*]
