@@ -4,8 +4,8 @@ W, H = 1580, 850
 OUT = "audit.svg"
 s = Svg("aud", W, H, "Audit data flow",
         "Four event types enter audit.Logger.Write, which stamps, truncates, redacts, marshals, locks, appends and fsyncs one JSON line, "
-        "then hands it to any sink. The local file is an operational copy, the Linux syslog sink feeds the authoritative central collector, "
-        "and Windows has no sink. Failed TLS handshakes never reach the audit log.")
+        "then hands it to any sink. The local file is an operational copy, the system-log sink (journald on Linux, the Application event log on Windows) feeds the authoritative central collector, "
+        "and failed TLS handshakes never reach the audit log.")
 
 # ---- events -------------------------------------------------------------------
 s.text(20, 40, "EVENTS", "ax-th")
@@ -50,11 +50,12 @@ s.rect(1070, 200, 490, 150, "ax-box ax-box-aud", 8)
 s.lines(1086, 226, [("Linux: syslog sink", "ax-tb"), ("facility AUTH, tag axiom-audit", "ax-tm"),
                      ("journald, then the bank's forwarder,", "ax-t"), ("then the central collector: the", "ax-t"),
                      ("authoritative, tamper-resistant copy", "ax-t")], 19)
-s.rect(1070, 370, 490, 100, "ax-box ax-box-warn", 8)
-s.lines(1086, 396, [("Windows: no sink", "ax-tb"), ("audit.syslog is rejected at config load;", "ax-t"),
-                     ("the local file is the only audit record", "ax-t")], 19)
+s.rect(1070, 370, 490, 100, "ax-box ax-box-aud", 8)
+s.lines(1086, 396, [("Windows: Event Log sink", "ax-tb"), ("Application log, source axiom, IDs 101-104", "ax-tm"),
+                     ("same fail-closed rules as Linux", "ax-t")], 19)
 s.path("M1010,358 H1030 V118 H1070", "ax-l-data", "data")
 s.path("M1010,410 H1050 V275 H1070", "ax-l-aud", "aud")
+s.path("M1050,410 V420 H1070", "ax-l-aud", "aud")
 
 # ---- failure behaviour ---------------------------------------------------------------
 s.text(20, 520, "IF THE WRITE OR THE FORWARD FAILS", "ax-th")

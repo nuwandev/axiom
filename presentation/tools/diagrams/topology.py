@@ -67,7 +67,7 @@ rows = [("ax-l-ctl", "ctl", "Axiom control plane \u00b7 HTTPS + mutual TLS"),
         ("ax-l-loc", "loc", "Local action execution on the host"),
         ("ax-l-data", "data", "Customer application / database traffic"),
         ("ax-l-art", "data", "Optional artifact / image pull by a script"),
-        ("ax-l-aud", "aud", "Audit forwarding (Linux journald / syslog)"),
+        ("ax-l-aud", "aud", "Audit forwarding (journald / Event Log)"),
         ("ax-l-pki", "pki", "Certificate issuance (customer PKI)")]
 for i, (cls, mk, label) in enumerate(rows):
     y = 820 + i * 28
@@ -141,7 +141,7 @@ s.lines(1289, 826, [("APPLICATION DATA PLANE", "ax-th"), ("Axiom does not proxy,
 
 # audit collector
 s.rect(872, 880, 370, 88, "ax-box", 6)
-s.lines(886, 904, [("Log collector / SIEM", "ax-tb"), ("Linux: journald / syslog forwarding", "ax-ts"), ("Windows: local audit.log only", "ax-ts")], 17)
+s.lines(886, 904, [("Log collector / SIEM", "ax-tb"), ("Linux: journald / syslog forwarding", "ax-ts"), ("Windows: Application event log", "ax-ts")], 17)
 
 # ---- control plane across the firewall ---------------------------------
 s.comment("control plane")

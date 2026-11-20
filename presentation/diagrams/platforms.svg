@@ -99,10 +99,10 @@
 <text x="252" y="838" class="ax-t">audit.log (JSONL, fsync) plus optional journald / syslog sink</text>
 <text x="252" y="858" class="ax-ts">the central collector is the authoritative copy</text>
 <text x="252" y="880" class="ax-tm">audit/syslog_unix.go</text>
-<rect x="790" y="812" width="530" height="82" rx="6" class="ax-box ax-box-warn"/>
-<text x="806" y="838" class="ax-t">local audit.log only (JSONL, fsync); no forwarding sink</text>
-<text x="806" y="858" class="ax-ts">axiom.log and the Event Log hold diagnostics, not audit</text>
-<text x="806" y="880" class="ax-tm">config/defaults_windows.go</text>
+<rect x="790" y="812" width="530" height="82" rx="6" class="ax-box"/>
+<text x="806" y="838" class="ax-t">audit.log (JSONL, fsync) plus optional Application event log sink</text>
+<text x="806" y="858" class="ax-ts">events 101 to 104; the collector is the authoritative copy</text>
+<text x="806" y="880" class="ax-tm">audit/eventlog_windows.go</text>
 <path d="M20,898 H1320" class="ax-rowline"/>
 <text x="40" y="930" class="ax-tb">Packaging and trust</text>
 <text x="40" y="949" class="ax-tm">10</text>

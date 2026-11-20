@@ -76,7 +76,7 @@
 <path d="M56,904 H112" class="ax-l-art" marker-end="url(#topo-m-data)"/>
 <text x="124" y="908.5" class="ax-t">Optional artifact / image pull by a script</text>
 <path d="M56,932 H112" class="ax-l-aud" marker-end="url(#topo-m-aud)"/>
-<text x="124" y="936.5" class="ax-t">Audit forwarding (Linux journald / syslog)</text>
+<text x="124" y="936.5" class="ax-t">Audit forwarding (journald / Event Log)</text>
 <path d="M56,960 H112" class="ax-l-pki" marker-end="url(#topo-m-pki)"/>
 <text x="124" y="964.5" class="ax-t">Certificate issuance (customer PKI)</text>
 <rect x="56" y="990" width="54" height="22" rx="4" class="ax-chip ax-chip-agent"/>
@@ -153,7 +153,7 @@
 <rect x="872" y="880" width="370" height="88" rx="6" class="ax-box"/>
 <text x="886" y="904" class="ax-tb">Log collector / SIEM</text>
 <text x="886" y="921" class="ax-ts">Linux: journald / syslog forwarding</text>
-<text x="886" y="938" class="ax-ts">Windows: local audit.log only</text>
+<text x="886" y="938" class="ax-ts">Windows: Application event log</text>
 <!-- control plane -->
 <path d="M286,536 H702" class="ax-l-ctl-b" marker-end="url(#topo-m-ctl)"/>
 <rect x="524" y="524" width="52" height="24" rx="12" class="ax-pill"/>
