@@ -33,3 +33,5 @@ g.stateGroup rect, .statediagram-state rect.basic {
 .label text, .nodeLabel, g.stateGroup text, .stateLabel text { fill: var(--ax-ink, #1c2430) !important; }
 .node circle.state-start, .node circle.state-end, .end-state-inner { fill: var(--ax-ink, #1c2430) !important; stroke: var(--ax-ink, #1c2430) !important; }
 .statediagram-state .divider, g.stateGroup line { stroke: var(--ax-line, #a9a79d) !important; }
+.node rect, g.stateGroup rect, .statediagram-state rect.basic { rx: 8px !important; ry: 8px !important; stroke-width: 1.4px !important; }
+.actor, .labelBox, .note { rx: 6px; ry: 6px; }
