@@ -6,6 +6,46 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [2.1.0] — 2026-11-20
+
+Minor release. Both new settings are optional and off by default; one startup
+check is stricter (see Fixed).
+
+### Added
+- **Windows audit forwarding.** `audit.syslog: true` is now accepted on
+  Windows and writes every audit record to the Application event log under the
+  `axiom` source (registered by the installer). The record is the event text;
+  `accepted`, `started` and `finished` are informational events 101, 102 and
+  103, and `rejected` is warning 104. The fail-closed rules match Linux: the
+  service refuses to start if the source is not registered, and an event-log
+  write failure refuses the action on the accept and start paths. A record over
+  the 31,839-character event limit fails instead of being truncated. The sink
+  is covered by unit tests and an automated test against the real Application
+  log on a Windows runner; it has not yet been run on a Windows Server 2022
+  host (procedure in `docs/audit-validation.md`).
+- **Per-identity trigger rate limit.** `jobs.max_triggers_per_minute` (0-10000,
+  default 0 = off) gives each identity a token bucket that starts full and
+  refills at that rate. Over the limit a trigger returns `429` with
+  `Retry-After` and creates no job. Rate-limited requests are not audited, like
+  requests refused at `jobs.max_concurrent`.
+- An architecture presentation (`presentation/`), built with Zensical, with its
+  diagram sources and tooling.
+
+### Fixed
+- Action parameter names that differ only by letter case (for example `Tag` and
+  `tag`) both map to the same `AXIOM_PARAM_TAG` environment variable, so the
+  script received an arbitrary one of the two values. Configuration loading now
+  rejects such an action with an error naming both parameters. **A
+  configuration that declares such names will no longer start; rename one of
+  them.**
+
+### Changed
+- Documentation updated for the Windows sink, the rate limit and the
+  parameter-name rule (configuration reference, threat model, audit
+  validation, security overview, install guides, example configs, rollback
+  notes). Rolling back to v2.0.x needs `jobs.max_triggers_per_minute` and, on
+  Windows, `audit.syslog` removed from the configuration first.
+
 ## [2.0.2] — 2026-11-13
 
 Patch release; no configuration or API changes.
