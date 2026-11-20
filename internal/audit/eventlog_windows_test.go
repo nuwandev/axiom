@@ -4,6 +4,7 @@ package audit
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -110,9 +111,14 @@ func TestOpenEventLogSink_RefusesAnUnregisteredSource(t *testing.T) {
 // TestEventLogSink_RealEventLog writes through the real Windows event log and
 // reads the entry back. It registers a throwaway source, which needs an
 // elevated process, so it is skipped otherwise (the GitHub windows runner is
-// elevated; a developer shell usually is not).
+// elevated, and fails here if it is not; a developer shell usually is not).
 func TestEventLogSink_RealEventLog(t *testing.T) {
 	if !windows.GetCurrentProcessToken().IsElevated() {
+		// On GitHub Actions this test must run, not silently skip: the docs
+		// cite it as the real-event-log coverage.
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Fatal("the CI runner is expected to be elevated so the real event log test can run")
+		}
 		t.Skip("registering an event source needs an elevated process")
 	}
 	const source = "axiom-audit-test"
