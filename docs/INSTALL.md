@@ -321,9 +321,10 @@ path — this is intentionally a hard failure, not a warning.
 
 Scripts receive their declared, validated parameters as environment
 variables named `AXIOM_PARAM_<NAME>` (upper-cased), plus `AXIOM_JOB_ID` and
-`AXIOM_ACTION`. See [`scripts/examples/your-deploy.sh.sample`](../scripts/examples/your-deploy.sh.sample)
-for a complete worked example, including doing real health-check validation
-rather than just trusting the launch command's exit code.
+`AXIOM_ACTION`. See [`scripts/examples/hello-world.sh.sample`](../scripts/examples/hello-world.sh.sample)
+for a worked example of reading them. Verifying real application health
+before exiting `0`, rather than just trusting a launch command's exit code,
+is the script's responsibility.
 
 ---
 

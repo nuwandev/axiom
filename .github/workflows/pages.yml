@@ -1,12 +1,16 @@
 name: Pages
 
-# Publishes the architecture presentation (presentation/) to GitHub Pages.
-# Runs only when the presentation changes on main, or on demand.
+# Publishes the documentation site (website/, generated from README.md and
+# docs/) at the site root and the architecture presentation (presentation/)
+# under /architecture/. Runs when either source changes on main, or on demand.
 
 on:
   push:
     branches: [main]
     paths:
+      - "README.md"
+      - "docs/**"
+      - "website/**"
       - "presentation/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -20,7 +24,7 @@ concurrency:
 
 jobs:
   build:
-    name: build presentation
+    name: build sites
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -33,11 +37,18 @@ jobs:
         working-directory: presentation
         run: pip install -r requirements.txt
 
-      - name: build (strict)
+      - name: prepare documentation pages
+        run: python website/tools/prepare_docs.py
+
+      - name: build documentation site (strict)
+        working-directory: website
+        run: zensical build -f zensical.toml -s
+
+      - name: build presentation (strict)
         working-directory: presentation
         run: zensical build -f zensical.toml -s
 
-      - name: validate the built site
+      - name: validate the built presentation
         working-directory: presentation
         run: python tools/check_site.py
 
@@ -45,9 +56,15 @@ jobs:
         working-directory: presentation
         run: python tools/generate_svgs.py --check
 
+      - name: assemble the published site
+        run: |
+          mkdir _site
+          cp -r website/site/. _site/
+          cp -r presentation/site _site/architecture
+
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: presentation/site
+          path: _site
 
   deploy:
     name: deploy to GitHub Pages
