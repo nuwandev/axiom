@@ -33,8 +33,8 @@ depends on a client behaving well.
 | **No arbitrary execution** | Only actions declared in config can run. Scripts are executed directly (no shell) with a fixed minimal `PATH`; the agent's own environment is not inherited. |
 | **Validated parameters** | Each parameter must declare a pattern, matched against the whole value, and arrives only as an `AXIOM_PARAM_*` environment variable. Body size, parameter count and value length are capped. |
 | **Integrity of what runs** | At startup the config, CA, server certificate and key, and every action script (and their parent directories) must be root-owned and not writable by others, with no symlinks; the private key must not be readable by other users. Otherwise the agent refuses to start. |
-| **Bounded resources** | Per-action timeouts kill the whole process tree; output is size-capped; `jobs.max_concurrent` caps running jobs (`429` beyond it); exclusive actions cannot overlap. |
-| **Audit that fails closed** | `accepted`, `started`, `finished` and `rejected` events are recorded, secret-looking values are redacted, and an action does not run if its accept or start record cannot be written. Linux can also forward every record to journald/syslog for a central collector. |
+| **Bounded resources** | Per-action timeouts kill the whole process tree; output is size-capped; `jobs.max_concurrent` caps running jobs and an optional per-identity trigger rate limit caps how often an identity may trigger (`429` beyond either); exclusive actions cannot overlap. |
+| **Audit that fails closed** | `accepted`, `started`, `finished` and `rejected` events are recorded, secret-looking values are redacted, and an action does not run if its accept or start record cannot be written. Both platforms can also forward every record to the system log (journald/syslog on Linux, the Application event log on Windows) for a central collector. |
 | **Contained process** | Dedicated unprivileged account in a systemd sandbox (no capabilities, `NoNewPrivileges`, read-only filesystem except its log and state directories). On Windows: `NT SERVICE\axiom` virtual account, NTFS ACL checks, Job Object containment. |
 | **Small attack surface** | One static binary with two third-party modules (`yaml.v3`, `golang.org/x/sys`), four HTTP routes, no shell, no database, and no outbound network connections. |
 | **Verifiable releases** | Built in GitHub Actions with commit-pinned actions and an exact Go toolchain, `govulncheck` and CodeQL code scanning (Linux and Windows code) in CI, GPG-signed `SHA256SUMS` and RPMs, SLSA build provenance, and a CycloneDX SBOM for the Linux and Windows binaries. The signing key is available only to the publish job, and a real release fails without it. See [`docs/verifying-downloads.md`](docs/verifying-downloads.md). |
@@ -53,7 +53,7 @@ CA, so short-lived, per-pipeline certificates (and removing an identity from
 the config to cut it off) are the way to manage a credential's lifetime.
 Actions run as the service account, so give each one only the access it
 needs. For a centrally retained audit record, forward to your collector with
-the syslog sink. See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for the
+the system-log sink (`audit.syslog`). See [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for the
 full analysis.
 
 ## How it works
@@ -376,8 +376,11 @@ shipped. Windows Server 2022 and Windows 11 Pro real-host validation:
 - The Windows `.exe`/`.msi` are not Authenticode-signed, so SmartScreen
   warns on first run; RPMs and `SHA256SUMS` are GPG-signed and releases
   carry build provenance ([verification steps](docs/verifying-downloads.md)).
-- Audit forwarding is verified against journald; point it at your collector
-  and confirm with [`docs/audit-validation.md`](docs/audit-validation.md).
+- Audit forwarding is verified against journald on Linux. The Windows Event
+  Log sink is covered by unit tests and an automated test against the real
+  Event Log on a Windows runner, but has not yet been run on a Windows Server
+  2022 host. On either platform, point it at your collector and confirm with
+  [`docs/audit-validation.md`](docs/audit-validation.md).
 - The Docker/Kubernetes action path is implemented but not yet exercised end
   to end, and third-party antivirus/EDR interoperability has not been tested.
 

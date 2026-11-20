@@ -685,3 +685,35 @@ func TestLoad_MaxConcurrentBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_MaxTriggersPerMinuteBounds(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		wantErr bool
+	}{{"0", false /* 0 = no limit */}, {"1", false}, {"10000", false}, {"-1", true}, {"10001", true}} {
+		dir := t.TempDir()
+		script := writeFixture(t, dir, "deploy.sh", "#!/bin/sh\n", 0o750)
+		ca := writeFixture(t, dir, "ca.crt", testCertPEM, 0o640)
+		cert := writeFixture(t, dir, "server.crt", testCertPEM, 0o640)
+		key := writeFixture(t, dir, "server.key", testKeyPEM, 0o600)
+		content := baseYAML(dir, script, ca, cert, key) + "\njobs:\n  max_triggers_per_minute: " + tc.value + "\n"
+		cfg, err := Load(writeFixture(t, dir, "config.yaml", content, 0o640))
+		if (err != nil) != tc.wantErr {
+			t.Errorf("max_triggers_per_minute=%s: err = %v, wantErr %v", tc.value, err, tc.wantErr)
+		}
+		if err == nil && cfg.MaxTriggersPerMinute != atoiOrZero(tc.value) {
+			t.Errorf("max_triggers_per_minute=%s: loaded %d", tc.value, cfg.MaxTriggersPerMinute)
+		}
+	}
+}
+
+func atoiOrZero(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}

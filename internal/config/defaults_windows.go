@@ -19,5 +19,5 @@ func defaultAuditLogPath() string {
 }
 
 // syslogSupported reports whether audit.syslog can be honoured on this
-// platform. Windows has no syslog/journald equivalent wired up yet.
-const syslogSupported = false
+// platform. On Windows it forwards each record to the Application event log.
+const syslogSupported = true

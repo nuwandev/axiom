@@ -1,7 +1,9 @@
 flowchart TD
     accTitle: Job admission control
-    accDescr: Parameter validation, exclusive lock, shutdown check, slot cap and the accepted audit write that gate a trigger.
-    A["Trigger with action, identity, params"] --> B{{"Parameters declared and matching patterns?"}}
+    accDescr: Trigger rate limit, parameter validation, exclusive lock, shutdown check, slot cap and the accepted audit write that gate a trigger.
+    A["Trigger with action, identity, params"] --> R{{"Identity under its trigger rate limit? (only if configured)"}}
+    R -- "no" --> E0["429 with Retry-After"]
+    R -- "yes" --> B{{"Parameters declared and matching patterns?"}}
     B -- "no" --> E1["400"]
     B -- "yes" --> C{{"Action is exclusive?"}}
     C -- "yes" --> D{{"Per-action lock free?"}}

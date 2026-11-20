@@ -30,7 +30,7 @@ rows = [
      ("NTFS ACLs: service reads and executes binary and scripts,", "reads config and certs; modify only on logs\\ and its own temp", "packaging/windows/README.md"), None),
     ("Audit storage",
      ("audit.log (JSONL, fsync) plus optional journald / syslog sink", "the central collector is the authoritative copy", "audit/syslog_unix.go"),
-     ("local audit.log only (JSONL, fsync); no forwarding sink", "axiom.log and the Event Log hold diagnostics, not audit", "config/defaults_windows.go"), "w"),
+     ("audit.log (JSONL, fsync) plus optional Application event log sink", "events 101 to 104; the collector is the authoritative copy", "audit/eventlog_windows.go"), None),
     ("Packaging and trust",
      ("RPM (nfpm) and install.sh; RPMs and SHA256SUMS GPG-signed", "SELinux enforcing validated on one Rocky Linux 9.8 host", "packaging/rpm, scripts/sign-release.sh"),
      ("MSI (WiX) or zip with Install-Axiom.ps1; SHA256SUMS signed", "binaries and MSI are not Authenticode-signed", "packaging/windows, README.md"), "w"),

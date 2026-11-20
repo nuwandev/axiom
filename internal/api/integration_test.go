@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,8 @@ type testEnvOptions struct {
 	healthAnonymous  bool
 	// maxConcurrent sets jobs.max_concurrent (0 = default).
 	maxConcurrent int
+	// maxTriggersPerMinute sets jobs.max_triggers_per_minute (0 = no limit).
+	maxTriggersPerMinute int
 	// slowAction adds "slow.action" (sleeps 5s), allowed for ci-jenkins.
 	slowAction bool
 	// unlistedAction adds "frontend.deploy", which no identity may run.
@@ -118,8 +121,14 @@ authorization:
 ` + identityExtra
 	auditPath := filepath.Join(dir, "audit.log")
 	yamlContent += "\naudit:\n  path: " + auditPath + "\n"
-	if opts.maxConcurrent > 0 {
-		yamlContent += fmt.Sprintf("\njobs:\n  max_concurrent: %d\n", opts.maxConcurrent)
+	if opts.maxConcurrent > 0 || opts.maxTriggersPerMinute > 0 {
+		yamlContent += "\njobs:\n"
+		if opts.maxConcurrent > 0 {
+			yamlContent += fmt.Sprintf("  max_concurrent: %d\n", opts.maxConcurrent)
+		}
+		if opts.maxTriggersPerMinute > 0 {
+			yamlContent += fmt.Sprintf("  max_triggers_per_minute: %d\n", opts.maxTriggersPerMinute)
+		}
 	}
 
 	configPath := writeFile(t, dir, "config.yaml", []byte(yamlContent), 0o640)
@@ -679,5 +688,35 @@ func TestIntegration_GlobalJobLimitReturns429(t *testing.T) {
 	}
 	if second.Header.Get("Retry-After") == "" {
 		t.Errorf("429 response has no Retry-After header")
+	}
+}
+
+// With jobs.max_triggers_per_minute set, an identity that exhausts its
+// allowance gets 429 with a Retry-After of at least one second. Per-identity
+// isolation is covered by the jobs package tests.
+func TestIntegration_TriggerRateLimitReturns429(t *testing.T) {
+	env := newTestEnv(t, &testEnvOptions{maxTriggersPerMinute: 2})
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 60)
+	client := env.clientFor(certPEM, keyPEM)
+
+	post := func() *http.Response {
+		resp, err := client.Post(env.server.URL+"/v1/actions/sample.action", "application/json", nil)
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	for i := 0; i < 2; i++ {
+		if resp := post(); resp.StatusCode != http.StatusAccepted {
+			t.Fatalf("trigger %d: status = %d, want 202", i+1, resp.StatusCode)
+		}
+	}
+	resp := post()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("third trigger: status = %d, want 429", resp.StatusCode)
+	}
+	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err != nil || secs < 1 {
+		t.Errorf("Retry-After = %q, want a whole number of seconds >= 1", resp.Header.Get("Retry-After"))
 	}
 }

@@ -21,6 +21,7 @@ audit:
   path: /var/log/axiom/audit.log
   # Also emit each record to journald/syslog. Forward that stream to a central
   # collector: the local file is writable by the account that runs actions.
+  # (On Windows the same setting writes to the Application event log.)
   syslog: true
 
 # Both optional; shown here at their built-in defaults.
@@ -34,6 +35,9 @@ jobs:
                         # finished job is evicted once this is exceeded. This is
                         # not a durable store — job history is lost on restart.
                         # The audit log is the durable execution record.
+  # max_triggers_per_minute: 60   # optional, off (0) by default: most triggers one
+  #                               # identity may make per minute; over it a trigger
+  #                               # gets 429 with Retry-After and creates no job.
 
 actions:
   # Trigger this first after a fresh install to confirm mTLS, authorization,

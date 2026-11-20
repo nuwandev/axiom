@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nuwandev/axiom/internal/audit"
 	"github.com/nuwandev/axiom/internal/jobs"
@@ -45,6 +48,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 const maxRequestBodyBytes = 64 * 1024
+
+// retryAfterSeconds rounds a wait up to whole seconds for the Retry-After
+// header; HTTP carries no fractions and "0" would invite an immediate retry.
+func retryAfterSeconds(d time.Duration) int {
+	return int(math.Max(1, math.Ceil(d.Seconds())))
+}
 
 type triggerRequest struct {
 	Parameters map[string]string `json:"parameters"`
@@ -126,6 +135,11 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, jobs.ErrActionBusy):
 			writeError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, jobs.ErrRateLimited):
+			var rl *jobs.RateLimitError
+			errors.As(err, &rl)
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(rl.RetryAfter)))
+			writeError(w, http.StatusTooManyRequests, err.Error())
 		case errors.Is(err, jobs.ErrTooManyJobs):
 			w.Header().Set("Retry-After", "10")
 			writeError(w, http.StatusTooManyRequests, err.Error())
