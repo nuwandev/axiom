@@ -6,7 +6,7 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
-## [2.1.0] — 2026-11-20
+## [2.1.0] — 2026-11-23
 
 Minor release. Both new settings are optional and off by default; one startup
 check is stricter (see Fixed).
