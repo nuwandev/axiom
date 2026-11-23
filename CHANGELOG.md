@@ -40,6 +40,12 @@ check is stricter (see Fixed).
   them.**
 
 ### Changed
+- The repository is now `nuwandev/axiom-mtls-agent` (GitHub redirects the old
+  URLs). README badges, install and download commands, package and installer
+  metadata, the security contact link and the release-check scripts point at the
+  new name. The Go module path stays `github.com/nuwandev/axiom`. Releases built
+  before the rename were attested under the old name, so their provenance is
+  still verified with `-R nuwandev/axiom` (see `docs/verifying-downloads.md`).
 - Documentation updated for the Windows sink, the rate limit and the
   parameter-name rule (configuration reference, threat model, audit
   validation, security overview, install guides, example configs, rollback

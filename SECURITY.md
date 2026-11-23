@@ -9,7 +9,7 @@ seriously and handled privately.
 **Do not open a public GitHub issue for a security vulnerability.**
 
 Report privately using GitHub's private vulnerability reporting:
-[Security Advisories for this repository](https://github.com/nuwandev/axiom/security/advisories/new).
+[Security Advisories for this repository](https://github.com/nuwandev/axiom-mtls-agent/security/advisories/new).
 
 If that's unavailable to you, open a regular issue asking to be pointed to
 an alternate private contact — do not include vulnerability details in that
@@ -43,7 +43,7 @@ welcome so it can be tracked and updated).
 ## Supported versions
 
 Security fixes are made against the latest 2.x release. See
-[Releases](https://github.com/nuwandev/axiom/releases) for what's current.
+[Releases](https://github.com/nuwandev/axiom-mtls-agent/releases) for what's current.
 1.x does not receive fixes; upgrade using the migration notes in
 [CHANGELOG.md](CHANGELOG.md).
 
