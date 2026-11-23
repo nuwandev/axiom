@@ -8,7 +8,7 @@ access. You configure what each action does — deploy, rollback, restart,
 or anything else — and Axiom itself knows nothing about what those actions
 actually do.
 
-[![CI](https://github.com/nuwandev/axiom/actions/workflows/ci.yml/badge.svg)](https://github.com/nuwandev/axiom/actions/workflows/ci.yml)
+[![CI](https://github.com/nuwandev/axiom-mtls-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/nuwandev/axiom-mtls-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## The problem
@@ -368,7 +368,7 @@ migration steps in [`CHANGELOG.md`](CHANGELOG.md) and
 [`docs/INSTALL.md`](docs/INSTALL.md#14-rollback) first. A v1.2.1 example
 config starts unchanged under 2.x when it meets those requirements.
 
-See [Releases](https://github.com/nuwandev/axiom/releases) for what has
+See [Releases](https://github.com/nuwandev/axiom-mtls-agent/releases) for what has
 shipped. Windows Server 2022 and Windows 11 Pro real-host validation:
 [`docs/WINDOWS-SERVER-2022-VALIDATION.md`](docs/WINDOWS-SERVER-2022-VALIDATION.md).
 

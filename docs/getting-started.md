@@ -18,11 +18,11 @@ AlmaLinux, CentOS Stream).
 ## 1. Obtain a release
 
 Download a release binary for your architecture from
-[Releases](https://github.com/nuwandev/axiom/releases), or build from
+[Releases](https://github.com/nuwandev/axiom-mtls-agent/releases), or build from
 source:
 
 ```bash
-git clone https://github.com/nuwandev/axiom.git
+git clone https://github.com/nuwandev/axiom-mtls-agent.git
 cd axiom
 go build -o axiom ./cmd/axiom
 ```

@@ -24,7 +24,7 @@ Check your own enforcing host before going live.
 - A RHEL-family host with systemd.
 - Root (or sudo) access on that host, for the one-time install.
 - The `axiom` binary for linux/amd64 or linux/arm64 — downloaded from
-  [Releases](https://github.com/nuwandev/axiom/releases) (most operators;
+  [Releases](https://github.com/nuwandev/axiom-mtls-agent/releases) (most operators;
   see §4a), built from source (`go build ./cmd/axiom`; §4b), or obtained
   from your internal build pipeline. The target server itself needs none
   of Go, Git, or a repository checkout — just the binary plus the two
@@ -123,8 +123,8 @@ systemd unit in one step, and gives you real upgrade/uninstall support
 (`dnf upgrade` / `dnf remove`) instead of a manual script:
 
 ```bash
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.1.0/axiom-2.1.0-1.x86_64.rpm
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.1.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/axiom-2.1.0-1.x86_64.rpm
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 sudo dnf install ./axiom-2.1.0-1.x86_64.rpm
 ```
@@ -156,15 +156,15 @@ a full checkout of this repository.
 
 ```bash
 # pick the asset matching your server's CPU
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.1.0/axiom-v2.1.0-linux-amd64
-curl -LO https://github.com/nuwandev/axiom/releases/download/v2.1.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/axiom-v2.1.0-linux-amd64
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 chmod +x axiom-v2.1.0-linux-amd64
 
 # the installer and systemd unit are small text files pulled directly from
 # the tagged release, not the whole repo
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.1.0/scripts/install.sh
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom/v2.1.0/packaging/axiom.service
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/scripts/install.sh
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/packaging/axiom.service
 chmod +x install.sh
 
 # SYSTEMD_UNIT_SRC is required here: install.sh's default path assumes it's
@@ -185,7 +185,7 @@ requires signature verification, not just a checksum match.
 ### 4c. From a source checkout
 
 ```bash
-git clone https://github.com/nuwandev/axiom.git
+git clone https://github.com/nuwandev/axiom-mtls-agent.git
 cd axiom
 go build -o axiom ./cmd/axiom
 sudo BIN_SRC=./axiom ./scripts/install.sh
@@ -259,7 +259,7 @@ which client identities may call which actions.
 sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yaml
 
 # or, on a server with no checkout (matches §4a):
-curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom/v2.1.0/configs/example.yaml
+curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/configs/example.yaml
 sudo install -o root -g axiom -m 0640 config.yaml /etc/axiom/config.yaml
 
 sudo vi /etc/axiom/config.yaml

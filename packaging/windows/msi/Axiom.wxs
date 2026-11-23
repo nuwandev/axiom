@@ -37,7 +37,7 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <Property Id="ARPHELPLINK" Value="https://github.com/nuwandev/axiom" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/nuwandev/axiom-mtls-agent" />
     <Property Id="ARPNOREPAIR" Value="1" />
     <Property Id="ARPNOMODIFY" Value="1" />
     <Property Id="ARPCOMMENTS"

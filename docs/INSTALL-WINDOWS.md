@@ -39,7 +39,7 @@ the complete findings and evidence.
   is **not** required or used.
 - Local administrator rights for the one-time install.
 - The Axiom Windows installer from
-  [Releases](https://github.com/nuwandev/axiom/releases) — either
+  [Releases](https://github.com/nuwandev/axiom-mtls-agent/releases) — either
   `axiom-<version>-windows-amd64.msi` (double-click / Add-Remove-Programs /
   `msiexec /qn` silent install — §3a) or
   `axiom-<version>-windows-amd64.zip` (extract and run
@@ -52,8 +52,8 @@ the complete findings and evidence.
 
   ```powershell
   # from a machine with network access, or directly on the server:
-  Invoke-WebRequest -Uri "https://github.com/nuwandev/axiom/releases/download/<version>/axiom-<version>-windows-amd64.msi" -OutFile axiom.msi
-  Invoke-WebRequest -Uri "https://github.com/nuwandev/axiom/releases/download/<version>/SHA256SUMS" -OutFile SHA256SUMS
+  Invoke-WebRequest -Uri "https://github.com/nuwandev/axiom-mtls-agent/releases/download/<version>/axiom-<version>-windows-amd64.msi" -OutFile axiom.msi
+  Invoke-WebRequest -Uri "https://github.com/nuwandev/axiom-mtls-agent/releases/download/<version>/SHA256SUMS" -OutFile SHA256SUMS
   $expected = (Select-String -Path SHA256SUMS -Pattern 'windows-amd64\.msi$').Line.Split()[0]
   if ((Get-FileHash axiom.msi -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw "checksum mismatch — do not install" }
   ```

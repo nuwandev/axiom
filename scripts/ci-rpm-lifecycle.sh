@@ -15,8 +15,8 @@
 set -euo pipefail
 
 BASELINE_VERSION="1.2.1"
-BASELINE_URL="https://github.com/nuwandev/axiom/releases/download/v${BASELINE_VERSION}/axiom-${BASELINE_VERSION}-1.x86_64.rpm"
-BASELINE_CFG_URL="https://raw.githubusercontent.com/nuwandev/axiom/v${BASELINE_VERSION}/configs/example.yaml"
+BASELINE_URL="https://github.com/nuwandev/axiom-mtls-agent/releases/download/v${BASELINE_VERSION}/axiom-${BASELINE_VERSION}-1.x86_64.rpm"
+BASELINE_CFG_URL="https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v${BASELINE_VERSION}/configs/example.yaml"
 
 if [[ "${1:-}" != "--inside" ]]; then
   candidate="${1:?usage: ci-rpm-lifecycle.sh /path/to/candidate.rpm}"

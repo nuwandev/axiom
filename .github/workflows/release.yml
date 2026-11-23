@@ -229,7 +229,7 @@ jobs:
           cat SHA256SUMS
 
       # SLSA build provenance for every published file, recorded in GitHub's
-      # attestation store. Verify with: gh attestation verify <file> -R nuwandev/axiom
+      # attestation store. Verify with: gh attestation verify <file> -R nuwandev/axiom-mtls-agent
       # Not yet exercised: confirm with the v0.0.0-dryrun run before relying on it.
       - name: attest build provenance
         if: needs.build.outputs.publish == 'true'

@@ -37,7 +37,7 @@ DOC="${REPO_ROOT}/docs/INSTALL.md"
 render() {
   sed -E \
     -e "s#(releases/download/)v[0-9]+\.[0-9]+\.[0-9]+#\1${VERSION}#g" \
-    -e "s#(raw\.githubusercontent\.com/nuwandev/axiom/)v[0-9]+\.[0-9]+\.[0-9]+#\1${VERSION}#g" \
+    -e "s#(raw\.githubusercontent\.com/nuwandev/axiom-mtls-agent/)v[0-9]+\.[0-9]+\.[0-9]+#\1${VERSION}#g" \
     -e "s#axiom-v[0-9]+\.[0-9]+\.[0-9]+-linux-#axiom-${VERSION}-linux-#g" \
     -e "s#axiom-[0-9]+\.[0-9]+\.[0-9]+-1\.#axiom-${BARE}-1.#g" \
     "$DOC"
