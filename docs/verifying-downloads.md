@@ -54,7 +54,12 @@ workflow from the release tag.
 The repository was later renamed to `nuwandev/axiom-mtls-agent`. Releases
 built before the rename were attested under the previous name, so they verify
 with `-R nuwandev/axiom` as shown (checked with v2.0.2), and `-R
-nuwandev/axiom-mtls-agent` fails for them.
+nuwandev/axiom-mtls-agent` fails for them. Releases from v2.1.0 on were built
+after the rename and verify the other way round (checked with v2.1.0):
+
+```bash
+gh attestation verify axiom-v2.1.0-linux-amd64 -R nuwandev/axiom-mtls-agent
+```
 
 ## Software bill of materials (SBOM)
 
