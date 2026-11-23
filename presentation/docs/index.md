@@ -11,7 +11,7 @@ title: Architecture presentation
 <p class="ax-lede">Axiom lets a trusted CI system trigger predefined actions on a server over mutual TLS, without giving it SSH. This presentation places the agent in an illustrative banking estate, then opens it up and follows one request through the Go implementation.</p>
 
 <div class="ax-facts">
-<div><p class="k">Release described</p><p class="v">v2.0.2, source at 601357c</p></div>
+<div><p class="k">Release described</p><p class="v">v2.1.0, source at the release tag</p></div>
 <div><p class="k">Platforms</p><p class="v">Linux (systemd), Windows (service)</p></div>
 <div><p class="k">API surface</p><p class="v">Four HTTP routes</p></div>
 <div><p class="k">Outbound connections</p><p class="v">None made by Axiom</p></div>
@@ -46,8 +46,8 @@ Everything that follows separates two things that are easy to blur in an archite
 | mTLS listener, per-request certificate verification, Common Name identity | Jenkins, pipelines, the credential store |
 | Default-deny identity-to-action allowlist, owner-only job access | Firewalls, segmentation, WAF and load balancer |
 | Fixed, validated execution: no shell, no arbitrary path | Web, application and database servers, and the application on them |
-| Timeouts, output caps, job limits, process-tree containment | The action scripts: deploys, restarts, registry pulls |
-| JSONL audit with fsync, Linux syslog sink | SIEM or collector, retention, log shipping on Windows |
+| Timeouts, output caps, job and trigger-rate limits, process-tree containment | The action scripts: deploys, restarts, registry pulls |
+| JSONL audit with fsync, system-log sink (journald or Windows Event Log) | SIEM or collector, retention, forwarding from the host |
 | Startup integrity checks on config, certificates and scripts | PKI: issuing, rotating and revoking certificates |
 
 !!! note "The topology is an example"
@@ -81,7 +81,7 @@ Optional artifact pull
 :   Dashed grey. If a script pulls an image or artifact from the registry, that is the script's own network path and the bank's own firewall rule.
 
 Audit and certificates
-:   Dashed amber is audit forwarding, available on Linux through journald or syslog. Dotted grey is certificate issuance by the bank's PKI, which sits entirely outside Axiom.
+:   Dashed amber is audit forwarding, available on both platforms: journald or syslog on Linux, the Application event log on Windows. Dotted grey is certificate issuance by the bank's PKI, which sits entirely outside Axiom.
 
 !!! warning "No TLS-terminating device in the Axiom path"
     The agent takes the caller's identity from the client certificate presented on the TCP connection it terminates (`internal/api/middleware.go`, `withIdentity`). There is no forwarded-header support. A reverse proxy or a TLS-terminating WAF between Jenkins and the agent would remove the certificate and break authentication. Direct connections or Layer 4 TCP passthrough are the only supported shapes.
@@ -106,7 +106,7 @@ A host that Jenkins must act on runs its own agent, with its own configuration, 
 | CI executor to agent | Inbound to the host | The configured `agent.listen.port` (8443 in the shipped examples) | Mutual TLS, no termination in between |
 | Axiom to anything else | None | n/a | The agent makes no outbound connections |
 | Script to registry or services | Outbound, defined by the script | Customer defined | The systemd unit permits `AF_INET`, `AF_INET6`, `AF_UNIX`, `AF_NETLINK` |
-| Host to log collector | Through the local syslog daemon | Customer defined | Linux only |
+| Host to log collector | Through the local syslog daemon or the Windows Event Log | Customer defined | Both platforms |
 
 ### Provisioning, as the installers actually behave
 
@@ -226,7 +226,7 @@ A host that Jenkins must act on runs its own agent, with its own configuration, 
     | 404 | Job unknown, malformed, or owned by another identity | `ownedJob` |
     | 409 | Exclusive action already running | `jobs.ErrActionBusy` |
     | 415 | Content type is not JSON | `handleTriggerAction` |
-    | 429 | Agent-wide job cap reached, with `Retry-After` | `jobs.ErrTooManyJobs` |
+    | 429 | Agent-wide job cap or this identity's trigger rate limit reached, with `Retry-After` | `jobs.ErrTooManyJobs`, `jobs.ErrRateLimited` |
     | 503 | Agent is shutting down | `jobs.ErrShuttingDown` |
 
 ## 5. Internal architecture {#internals}
@@ -310,6 +310,7 @@ Implementation notes
 | Action timeout | 1 s to 24 h, per action | `config.MinActionTimeout`, `MaxActionTimeout` |
 | Stop behaviour | Unix: SIGTERM to the group, 5 s grace, SIGKILL. Windows: immediate job termination | `executor.Run`, `TerminationGracePeriod` |
 | Agent-wide job cap | `jobs.max_concurrent`, default 16 | `config.DefaultMaxConcurrentJobs` |
+| Trigger rate per identity | `jobs.max_triggers_per_minute`, off by default; over it, 429 and no job | `Manager.Trigger`, `rateLimiter.allow` |
 | Retained history | `jobs.max_history`, default 1000; the oldest finished job is evicted first | `Manager.recordJob` |
 | Captured output | `output.max_bytes` per stream, default 2 MiB | `executor.cappedBuffer` |
 | Request caps | 64 KiB body, 64 parameters, 4096 bytes per value | `handlers.go` |
@@ -326,7 +327,7 @@ Memory, not storage
 <div class="ax-scroll">
 --8<-- "audit.svg"
 </div>
-<figcaption>Figure 9. From event to evidence. The local file is an operational copy; on Linux the central collector behind the syslog sink is the authoritative record.</figcaption>
+<figcaption>Figure 9. From event to evidence. The local file is an operational copy; the central collector behind the system-log sink (journald on Linux, the Application event log on Windows) is the authoritative record.</figcaption>
 </figure>
 
 An accepted-through-finished sequence for one job, as it appears in the file (one JSON object per line):
@@ -352,20 +353,20 @@ The external API, configuration schema, authentication and authorization are ide
 <div class="ax-scroll">
 --8<-- "platforms.svg"
 </div>
-<figcaption>Figure 10. Ten concerns on each platform. Red outlines mark the two places where Windows has a gap that Linux does not.</figcaption>
+<figcaption>Figure 10. Ten concerns on each platform. The red outline marks the one place where Windows has a gap that Linux does not: unsigned binaries.</figcaption>
 </figure>
 
 ## 11. Security boundaries {#boundaries}
 
 | Boundary | Enforced by | Source | What remains |
 |---|---|---|---|
-| Network to listener | Mutual TLS, one trust root | `auth.TLSConfig` | No revocation check, no rate limiting |
+| Network to listener | Mutual TLS, one trust root | `auth.TLSConfig` | No revocation check; only triggers can be rate limited |
 | Identity to action | Default-deny allowlist keyed by CN | `Identity.IsAllowed`, `handleTriggerAction` | Changes need a restart; CN issuance is the CA's job |
 | Request to job manager | Schema, size, regex and parameter validation | `handlers.go`, `config.Parameter` | A script can still mishandle a validated value |
 | Job visibility | Owner-only status and logs | `ownedJob` | State is in memory only |
 | Axiom to script | No shell, fixed invocation, constructed environment, timeout, output cap, containment | `executor`, `jobs.buildEnv` | Axiom does not constrain what a script does |
 | Service account to its own files | Startup integrity checks, systemd or NTFS sandbox | `config/script_security_*`, `winsec`, `axiom.service` | Docker group access is root-equivalent; the Windows account holds `SeImpersonatePrivilege` |
-| Axiom to audit | Fail-closed accepted and started, fsync | `audit.Logger.Write` | Local file alterable; finished record best effort; no Windows sink |
+| Axiom to audit | Fail-closed accepted and started, fsync | `audit.Logger.Write` | Local file alterable; finished record best effort; Windows event-log entries are forgeable by the service account |
 | Release to host | GPG-signed RPMs and checksums, SBOM, provenance | `release.yml`, `sign-release.sh` | Windows binaries are not Authenticode-signed |
 
 ## 12. Failure handling and limitations {#limits}
@@ -388,11 +389,11 @@ The external API, configuration schema, authentication and authorization are ide
 
 <div class="ax-ledger">
 <div><b>Check certificate revocation</b><span>A stolen client certificate keeps working until it expires or its identity is removed and the agent restarted.<em>internal/auth/auth.go, Verify</em></span></div>
-<div><b>Rate limit</b><span>Connection, handshake and request rates are not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>docs/THREAT-MODEL.md, resource limits</em></span></div>
+<div><b>Rate limit connections</b><span>Only triggers can be limited, per identity, and only when <code>jobs.max_triggers_per_minute</code> is set (off by default). Connections, TLS handshakes and other requests are not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, docs/THREAT-MODEL.md</em></span></div>
 <div><b>Prevent replay</b><span>A replayed request is indistinguishable from a repeated trigger. Exclusive actions answer 409 while running; shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
 <div><b>Reload configuration</b><span>Configuration, certificates and identities are read once. Changing any of them means a restart, which cancels running jobs.<em>docs/certificates.md</em></span></div>
 <div><b>Persist job state</b><span>Status and logs vanish on restart or crash. The audit log is the durable record.<em>internal/jobs/manager.go</em></span></div>
-<div><b>Forward audit on Windows</b><span>There is no sink: the local file is the only record and the service account can alter it.<em>internal/config/defaults_windows.go</em></span></div>
+<div><b>Attribute Windows event-log entries</b><span>Event-log entries carry no sender attribute a script cannot also set, and the sink has not yet been run on a Windows Server host. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
 <div><b>Audit failed TLS handshakes</b><span>Handshake rejections never reach the audit log; they go to the standard logger on stderr.<em>cmd/axiom/main.go, no ErrorLog set</em></span></div>
 <div><b>Restrict what a script does</b><span>Scripts may use the network and any resource the service account can reach. Axiom controls how a script is invoked, not its behaviour.<em>packaging/axiom.service, RestrictAddressFamilies</em></span></div>
 <div><b>Sign Windows binaries</b><span>The exe and MSI are not Authenticode-signed. Checksums and the Linux RPMs are GPG-signed, and releases carry build provenance and an SBOM.<em>README.md known gaps, SECURITY.md, docs/verifying-downloads.md</em></span></div>

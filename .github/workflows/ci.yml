@@ -98,6 +98,12 @@ jobs:
         # pass, not here.
         run: go test ./...
 
+      - name: audit event log sink against the real Application log
+        # Registers a throwaway event source, writes through the real Windows
+        # event log and reads the entry back. Verbose so the result is visible;
+        # the test fails (not skips) if the runner is not elevated.
+        run: go test ./internal/audit -run TestEventLogSink_RealEventLog -v -count=1
+
       - name: powershell scripts parse under Windows PowerShell 5.1
         shell: powershell
         run: |

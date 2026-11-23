@@ -74,8 +74,8 @@
 <text x="1136" y="314" class="ax-tm">service %TEMP%, logs\axiom.log</text>
 <text x="1076" y="337" class="ax-ts">scripts and tools write here, nowhere else</text>
 <rect x="1060" y="366" width="480" height="90" rx="8" class="ax-box ax-box-aud"/>
-<text x="1076" y="392" class="ax-tb">journald / syslog (Linux)</text>
-<text x="1076" y="412" class="ax-t">same audit JSON, handed to the local socket</text>
+<text x="1076" y="392" class="ax-tb">journald (Linux) / Event Log (Windows)</text>
+<text x="1076" y="412" class="ax-t">same audit JSON, handed to the system log</text>
 <rect x="1060" y="482" width="480" height="70" rx="8" class="ax-box ax-box-ghost"/>
 <text x="1076" y="508" class="ax-tb">Forwarder and central collector</text>
 <text x="1076" y="528" class="ax-ts">customer-operated, outside this host</text>

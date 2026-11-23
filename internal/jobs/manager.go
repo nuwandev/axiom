@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +63,7 @@ type Manager struct {
 	maxOutputBytes int
 	maxHistory     int
 	maxConcurrent  int
+	limiter        *rateLimiter // nil when jobs.max_triggers_per_minute is 0
 
 	mu       sync.Mutex
 	active   int            // queued+running jobs holding a slot; guarded by mu
@@ -91,7 +91,12 @@ func NewManager(cfg *config.Config, auditLogger *audit.Logger, logger *slog.Logg
 	if maxConcurrent == 0 {
 		maxConcurrent = DefaultMaxConcurrent
 	}
+	var limiter *rateLimiter
+	if cfg.MaxTriggersPerMinute > 0 {
+		limiter = newRateLimiter(cfg.MaxTriggersPerMinute, time.Now)
+	}
 	return &Manager{
+		limiter:        limiter,
 		cfg:            cfg,
 		audit:          auditLogger,
 		logger:         logger,
@@ -194,8 +199,7 @@ func buildEnv(jobID, actionName string, params map[string]string) []string {
 		"AXIOM_ACTION="+actionName,
 	)
 	for name, value := range params {
-		envName := "AXIOM_PARAM_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
-		env = append(env, envName+"="+value)
+		env = append(env, config.ParameterEnvVar(name)+"="+value)
 	}
 	return env
 }
@@ -231,6 +235,13 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 	action, ok := m.cfg.Actions[actionName]
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownAction, actionName)
+	}
+	// Charged before any other work, and for rejected requests too, so a
+	// client cannot probe parameter values faster than the limit.
+	if m.limiter != nil {
+		if allowed, wait := m.limiter.allow(identity); !allowed {
+			return nil, &RateLimitError{RetryAfter: wait}
+		}
 	}
 	if err := validateParameters(action, params); err != nil {
 		return nil, err

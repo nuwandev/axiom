@@ -31,19 +31,22 @@ could be toggled.
   config, CA, server certificate/key and scripts must be root-owned and
   not group/world-writable (the key not accessible by others), and no
   ancestor directory may be writable by another user. Concurrency is
-  capped (`jobs.max_concurrent`).
+  capped (`jobs.max_concurrent`) and, if configured, so is each identity's
+  trigger rate (`jobs.max_triggers_per_minute`).
 - **Audit**: every accepted, started, finished, and rejected request is
   written synchronously to a local log and, with `audit.syslog: true`, also
-  emitted to journald/syslog, with values that look like secrets redacted.
+  emitted to the system log (journald/syslog on Linux, the Application event
+  log on Windows), with values that look like secrets redacted.
   The local file is owned by the account that runs actions and is not
-  tamper-resistant; the central collector you forward syslog to is the
+  tamper-resistant; the central collector you forward that stream to is the
   authoritative record (see `THREAT-MODEL.md`, "Audit trail integrity"):
 
   > **Local audit file: operational copy only.**
   > **Central collector: authoritative audit record.**
 
-  The forwarded sink is Linux-only; the Windows build keeps the local file
-  alone and is not suitable where forwarded audit evidence is required.
+  The Windows sink has been exercised by automated tests on a Windows runner
+  but not yet on a Windows Server host; confirm the path with
+  [`audit-validation.md`](audit-validation.md) before relying on it.
 - **Job visibility**: a job's status and logs are readable only by the
   identity that triggered it.
 

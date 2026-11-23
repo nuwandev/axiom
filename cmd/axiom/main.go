@@ -43,11 +43,11 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 
 	var sinks []audit.Sink
 	if cfg.AuditSyslog {
-		syslogSink, err := audit.NewSyslogSink()
+		systemLogSink, err := audit.NewSystemLogSink()
 		if err != nil {
-			return fmt.Errorf("opening syslog audit sink: %w", err)
+			return fmt.Errorf("opening system log audit sink: %w", err)
 		}
-		sinks = append(sinks, syslogSink)
+		sinks = append(sinks, systemLogSink)
 	}
 	auditLogger, err := audit.Open(cfg.AuditLogPath, cfg.AgentID, sinks...)
 	if err != nil {

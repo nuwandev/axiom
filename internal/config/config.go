@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -46,6 +48,10 @@ const (
 	MaxConcurrentJobsMin     = 1
 	MaxConcurrentJobsMax     = 1024
 	DefaultMaxConcurrentJobs = 16
+
+	// MaxTriggersPerMinute is the per-identity trigger rate limit; 0 (the
+	// default) leaves it off.
+	MaxTriggersPerMinuteMax = 10000
 )
 
 // actionNamePattern bounds action names to a safe, predictable charset:
@@ -202,8 +208,9 @@ type outputConfig struct {
 }
 
 type jobsConfig struct {
-	MaxHistory    int `yaml:"max_history"`
-	MaxConcurrent int `yaml:"max_concurrent"`
+	MaxHistory           int `yaml:"max_history"`
+	MaxConcurrent        int `yaml:"max_concurrent"`
+	MaxTriggersPerMinute int `yaml:"max_triggers_per_minute"`
 }
 
 // rawConfig mirrors the on-disk YAML shape before post-load processing.
@@ -250,6 +257,9 @@ type Config struct {
 	MaxOutputBytes    int
 	MaxJobHistory     int
 	MaxConcurrentJobs int
+	// MaxTriggersPerMinute limits how many actions one identity may trigger
+	// per minute (a token bucket with the same burst); 0 means no limit.
+	MaxTriggersPerMinute int
 }
 
 // Load reads, parses, and strictly validates the configuration at path.
@@ -285,6 +295,7 @@ func Load(path string) (*Config, error) {
 		MaxOutputBytes:         raw.Output.MaxBytes,
 		MaxJobHistory:          raw.Jobs.MaxHistory,
 		MaxConcurrentJobs:      raw.Jobs.MaxConcurrent,
+		MaxTriggersPerMinute:   raw.Jobs.MaxTriggersPerMinute,
 	}
 	if cfg.AuditLogPath == "" {
 		cfg.AuditLogPath = defaultAuditLogPath()
@@ -378,6 +389,10 @@ func (c *Config) validate() error {
 		return fmt.Errorf("jobs.max_concurrent must be between %d and %d, got %d", MaxConcurrentJobsMin, MaxConcurrentJobsMax, c.MaxConcurrentJobs)
 	}
 
+	if c.MaxTriggersPerMinute < 0 || c.MaxTriggersPerMinute > MaxTriggersPerMinuteMax {
+		return fmt.Errorf("jobs.max_triggers_per_minute must be between 0 (no limit) and %d, got %d", MaxTriggersPerMinuteMax, c.MaxTriggersPerMinute)
+	}
+
 	if len(c.Actions) == 0 {
 		return fmt.Errorf("actions: at least one action must be configured")
 	}
@@ -439,7 +454,41 @@ func validateAction(name string, a *Action, allowServiceOwned bool) error {
 		}
 		a.Parameters[paramName] = p
 	}
+	if err := checkParameterEnvNames(a.Parameters); err != nil {
+		return fmt.Errorf("actions.%s.parameters: %w", name, err)
+	}
 
+	return nil
+}
+
+// ParameterEnvVar is the environment variable through which a validated
+// parameter value reaches the action script. It is the single definition of
+// that mapping: configuration validation uses it to reject collisions and the
+// job manager uses it to build the child environment.
+func ParameterEnvVar(parameterName string) string {
+	return "AXIOM_PARAM_" + strings.ToUpper(parameterName)
+}
+
+// checkParameterEnvNames rejects parameter names that map to the same
+// environment variable (for example "Tag" and "tag"). Parameter names are
+// case-sensitive in the request but the environment variable name is
+// upper-cased, so a collision would leave the script with whichever of the
+// two values the process environment happened to keep. Names are compared in
+// sorted order so the error is deterministic.
+func checkParameterEnvNames(params map[string]Parameter) error {
+	names := make([]string, 0, len(params))
+	for n := range params {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	seen := make(map[string]string, len(names))
+	for _, n := range names {
+		env := ParameterEnvVar(n)
+		if other, ok := seen[env]; ok {
+			return fmt.Errorf("parameters %q and %q both map to the environment variable %s; parameter names must differ by more than letter case", other, n, env)
+		}
+		seen[env] = n
+	}
 	return nil
 }
 

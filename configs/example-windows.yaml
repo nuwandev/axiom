@@ -27,6 +27,10 @@ security:
 
 audit:
   path: C:\ProgramData\Axiom\logs\audit.log
+  # Also write each record to the Application event log (source "axiom",
+  # registered by the installer). Forward that log to a central collector: the
+  # local file is writable by the account that runs actions.
+  # syslog: true
 
 # Both optional; shown here at their built-in defaults.
 output:
@@ -37,6 +41,9 @@ jobs:
                        # over the cap a trigger gets 429 and creates no job.
   max_history: 1000    # in-memory job count kept for GET /v1/jobs/{id}; not durable.
                         # The audit log is the durable execution record.
+  # max_triggers_per_minute: 60   # optional, off (0) by default: most triggers one
+  #                               # identity may make per minute; over it a trigger
+  #                               # gets 429 with Retry-After and creates no job.
 
 actions:
   # Trigger this first after a fresh install to confirm mTLS, authorization,

@@ -15,12 +15,12 @@ type syslogSink struct {
 	w *syslog.Writer
 }
 
-// NewSyslogSink connects to the local syslog socket (journald serves
+// NewSystemLogSink connects to the local syslog socket (journald serves
 // /dev/log on systemd hosts) and returns a Sink that emits each audit record
 // as one structured JSON message at facility AUTH, severity INFO. It fails if
 // the socket is unavailable, so a misconfigured host refuses to start rather
 // than silently running without the forwarded trail.
-func NewSyslogSink() (Sink, error) {
+func NewSystemLogSink() (Sink, error) {
 	return dialSyslogSink("", "")
 }
 

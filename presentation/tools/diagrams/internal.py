@@ -72,7 +72,7 @@ box(*cfg, "Configuration", "internal/config/config.go \u00b7 Load, validate",
      "parameter patterns compiled as ^(?:\u2026)$", "script, cert, key, ancestor integrity", "read once: no hot reload"])
 box(*aud, "Audit subsystem", "internal/audit/audit.go \u00b7 Logger.Write",
     ["stamp, truncate to 512 B, redact secret names", "append JSONL line, fsync, then each Sink",
-     "error returned: accepted, started fail closed", "Sink: syslog on unix, none on Windows"], "ax-box ax-box-aud")
+     "error returned: accepted, started fail closed", "Sink: syslog (unix), Event Log (Windows)"], "ax-box ax-box-aud")
 box(*exe, "Executor", "internal/executor/executor.go \u00b7 Run",
     ["Spec: script path, env, timeout, output cap", "no argv or executable field in Spec",
      "timeout: terminate, 5 s grace, kill", "capped stdout / stderr buffers"], "ax-box ax-box-loc")
@@ -102,7 +102,7 @@ win = [("launch_windows.go", "fixed powershell.exe -File, GPO policy check"),
        ("process_windows.go", "Job Object, KILL_ON_JOB_CLOSE"),
        ("jobs/env_windows.go", "allowlisted system variables only"),
        ("winsec_windows.go", "owner, DACL and reparse-point checks"),
-       ("audit/syslog_other.go", "no sink: audit.syslog is a config error"),
+       ("audit/eventlog_windows.go", "Application event log sink, IDs 101-104"),
        ("service_windows.go", "SCM service, recovery, event log")]
 for px, title, rows in ((40, "UNIX (Linux target)", unix), (800, "WINDOWS", win)):
     s.rect(px, 830, 740, 200, "ax-box", 8)

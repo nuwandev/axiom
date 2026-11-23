@@ -395,7 +395,10 @@ can alter or delete that file. **The local file is application-level
 evidence, not a tamper-resistant record.**
 
 With `audit.syslog: true` every record is also emitted as one structured JSON
-message to journald/syslog (facility AUTH, identifier `axiom-audit`). The
+message to the system log: journald/syslog on Linux (facility AUTH, identifier
+`axiom-audit`) and the Application event log on Windows (source `axiom`, event
+IDs 101 to 104). The paragraphs below describe the Linux path in detail; the
+Windows differences are in the **Scope** note at the end of this section. The
 authoritative, tamper-resistant record is the collector the host forwards
 that stream to (for example a central SIEM), which the service account
 cannot modify; its retention, access control and integrity guarantees are
@@ -432,11 +435,20 @@ parameter values are bounded separately (4096 bytes each, and by each
 parameter's pattern); a record too large for the syslog datagram makes the
 write fail, so the action is refused rather than run unaudited.
 
-**Scope:** the forwarded audit sink exists on Linux only. The Windows build
-has no equivalent (`audit.syslog` is a configuration error there), so its
-local file is the only audit record and is writable by the service account.
-The Windows build is not part of a deployment that relies on forwarded audit
-evidence.
+**Scope: Windows.** `audit.syslog: true` writes each record to the
+Application event log under the `axiom` source (`accepted`, `started` and
+`finished` as informational events 101 to 103, `rejected` as warning 104). The
+fail-closed rules are the same as on Linux: an unregistered source stops the
+service from starting, and an event-log write failure refuses the action on the
+accept and start paths. A record over the 31,839-character event limit fails
+rather than being truncated. Unlike journald, the event log attaches no sender
+attribute that a script running as the service account cannot also set, so a
+forged entry cannot be told from a real one by source alone; the forwarded copy
+at your collector, compared with the local file, is the evidence. The sink is
+covered by unit tests and an automated test against the real event log on a
+Windows runner; it has not yet been exercised on a Windows Server 2022 host,
+and Windows Event Forwarding or an agent to your collector is the operator's to
+configure.
 
 ---
 
@@ -495,8 +507,14 @@ evidence.
   see `configuration.md` for sizing). Running jobs are held in addition.
 - **Request size:** body 64 KiB, 64 parameters, 4096 bytes per value; header
   and timeout limits are set on the HTTP server.
-- **Not bounded by Axiom:** connection or request rate, TLS handshakes from
-  anyone who can reach the port, CPU, process count or file descriptors used
+- **Trigger rate:** `jobs.max_triggers_per_minute` (off by default) limits
+  how often one identity may trigger actions; past it the API answers `429`
+  and creates no job. Rate-limited requests are not audited, so a flood cannot
+  become synced audit writes.
+- **Not bounded by Axiom:** connections, TLS handshakes from anyone who can
+  reach the port, requests other than triggers (including requests from a
+  certificate with no allowlisted identity, each of which writes an audit
+  record), CPU, process count or file descriptors used
   by action scripts, and audit writes (each request writes and syncs a
   record). Contain these with network controls and systemd resource limits
   (`TasksMax`, `MemoryMax`, `LimitNOFILE`, `CPUQuota`); the shipped unit does
