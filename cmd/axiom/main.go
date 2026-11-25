@@ -37,6 +37,13 @@ func main() {
 // Control Manager. Neither duplicates any of the startup or shutdown logic
 // below.
 func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+	return serveWithReload(ctx, cfg, logger, nil, nil)
+}
+
+// serveWithReload is serve plus live reload: each value received on reload
+// re-reads the configuration through load and applies the reloadable parts
+// (see api.Server.Reload). A nil reload channel disables it.
+func serveWithReload(ctx context.Context, cfg *config.Config, logger *slog.Logger, reload <-chan struct{}, load func() (*config.Config, error)) error {
 	if err := executor.CheckPlatformPrerequisites(); err != nil {
 		return fmt.Errorf("platform prerequisites: %w", err)
 	}
@@ -71,6 +78,8 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("building server: %w", err)
 	}
+
+	go reloadOnSignal(ctx, server, logger, reload, load)
 
 	tlsConfig, err := server.TLSConfig()
 	if err != nil {
@@ -123,4 +132,27 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	}
 
 	return nil
+}
+
+// reloadOnSignal applies a reload for every value received until ctx ends. A
+// failed reload is logged and leaves the running configuration untouched:
+// the operator's edit is wrong or incomplete, and the agent must keep serving
+// with what it already has rather than stop or run a half-applied state.
+func reloadOnSignal(ctx context.Context, server *api.Server, logger *slog.Logger, reload <-chan struct{}, load func() (*config.Config, error)) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-reload:
+			next, err := load()
+			if err == nil {
+				err = server.Reload(next)
+			}
+			if err != nil {
+				logger.Error("configuration reload failed; still running with the previous configuration", "error", err)
+				continue
+			}
+			logger.Info("configuration reloaded", "identities", len(next.Identities))
+		}
+	}
 }

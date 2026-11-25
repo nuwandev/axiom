@@ -17,22 +17,47 @@ Axiom. This keeps Axiom's trust boundary simple and auditable: it trusts
 exactly the CA bundle you give it, nothing more, and has no code path that
 could itself become a target for certificate-forging attacks.
 
-## Restart required after renewal
+## Reload after renewal
 
-**Yes.** Axiom reads `ca_file`, `cert_file`, and `key_file` once, at
-process startup (`tls.LoadX509KeyPair` plus building the CA pool into the
-listener's `tls.Config`). There is no file-watcher, no `SIGHUP` handler,
-no background renewal worker, and none is planned — that complexity
-belongs in a dedicated certificate-management system if you need one, not
-folded into an action-execution agent. A certificate renewal is not
-"live" until Axiom restarts and re-reads the files.
+Axiom re-reads `ca_file`, `cert_file`, `key_file` and
+`authorization.identities` when asked to, without a restart and without
+cancelling running jobs. There is no file-watcher and no background renewal
+worker: nothing changes until you trigger a reload.
 
-This is an accepted, deliberate trade-off for the current design: it keeps
-the TLS setup path small and easy to reason about, at the cost of a
-required restart on every rotation. If your CA's certificate lifetime is
-short enough that this becomes operationally painful, that's a signal to
-automate the restart step (below) in your renewal tooling, not to add
-hot-reload to Axiom.
+| Platform | Trigger |
+|---|---|
+| Linux | `sudo systemctl reload axiom` (sends `SIGHUP`) |
+| Windows | `sc.exe control axiom paramchange` |
+
+A reload re-runs the full startup validation on the config file and the
+three certificate files, then swaps the new identities and certificates in
+as one step.
+
+- **It either applies completely or not at all.** Any error (unreadable or
+  insecure file, invalid certificate, key that does not match) is logged as
+  `configuration reload failed` and Axiom keeps running on the previous
+  configuration.
+- **Only identities and certificate files are reloadable.** If the file also
+  changes anything else (actions, listen address or port, limits, audit
+  settings, `agent.*`), the whole reload is refused and the log names the
+  changed settings. Restart for those.
+- **New certificate material applies to new connections.** A connection that
+  is already open keeps the server certificate it negotiated, but its client
+  certificate is checked against the current CA and identity list on every
+  request, so a removed identity or a rotated-out CA stops working
+  immediately, even on open connections.
+- **Reloads are logged, not audited.** The outcome goes to the service log
+  (`configuration reloaded` with the identity count, or the failure). It is
+  not written to the audit trail.
+
+Console runs on Windows (`axiom.exe` outside the service) have no reload
+trigger.
+
+Validation status: the `SIGHUP` path is covered by automated tests and was
+run end to end against the Linux binary. The `ExecReload` line in the systemd
+unit and the Windows `paramchange` handler are covered only by compilation;
+neither has been exercised under a real systemd or Service Control Manager
+yet.
 
 ## Safe generic renewal flow
 
@@ -75,10 +100,11 @@ organization actually uses in place of `<your-pki-tool>`.
    kind of rotation carefully, since it affects every client's trust
    relationship, not just this one server certificate.)
 
-4. **Restart Axiom** so it re-reads the files (see [restart required
-   above](#restart-required-after-renewal) — there's no reload signal):
+4. **Reload Axiom** so it re-reads the files (see [reload after
+   renewal](#reload-after-renewal); use `sc.exe control axiom paramchange`
+   on Windows):
    ```bash
-   sudo systemctl restart axiom
+   sudo systemctl reload axiom
    ```
 
 5. **Verify `/health`:**
@@ -98,7 +124,7 @@ organization actually uses in place of `<your-pki-tool>`.
 
 If step 5 or 6 fails, the previous binary/config/certs are still on disk
 (this flow never deletes anything) — restore the prior `server.crt`/
-`server.key` and restart again while you investigate.
+`server.key` and reload again while you investigate.
 
 ## What Axiom validates automatically
 
@@ -118,14 +144,16 @@ identity until it expires or that identity is removed from the config. So:
 
 1. **Disable the identity immediately.** Remove its entry under
    `authorization.identities` (or just the actions it must not run) in
-   `/etc/axiom/config.yaml`, then `systemctl restart axiom` (Axiom has no hot
-   reload; `Restart-Service axiom` on Windows). A restart cancels running jobs
-   cleanly and drops all in-memory job state. Until the restart, the old
-   authorization stays in force.
+   `/etc/axiom/config.yaml`, then `systemctl reload axiom`
+   (`sc.exe control axiom paramchange` on Windows). Running jobs are not
+   cancelled. If the reload is refused or fails, the log says why and the old
+   authorization stays in force, so check the log and, if the file also
+   contains restart-only changes, restart instead (`systemctl restart axiom`
+   or `Restart-Service axiom`), which cancels running jobs.
 2. **Stop the CA issuing that identity again**, or issue the replacement under
    a different Common Name. Authorization is by exact Common Name, so a new
    certificate for the same CN from the same CA is accepted as the same
-   identity. Rotating the CA (new `ca.crt`, restart) invalidates every client
+   identity. Rotating the CA (new `ca.crt`, reload) invalidates every client
    certificate signed by the old one.
 3. **Review the audit trail** (the central collector, not just the local
    file) for what that identity ran: `accepted`/`started`/`finished` records

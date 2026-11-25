@@ -43,6 +43,9 @@ type testEnv struct {
 	serverCert string
 	serverKey  string
 	dir        string
+	srv        *Server
+	cfg        *config.Config
+	configPath string
 }
 
 // testEnvOptions lets individual tests add extra actions/identities/flags
@@ -160,7 +163,7 @@ authorization:
 	hts.StartTLS()
 	t.Cleanup(hts.Close)
 
-	return &testEnv{t: t, server: hts, ca: ca, dir: dir}
+	return &testEnv{t: t, server: hts, ca: ca, dir: dir, srv: srv, cfg: cfg, configPath: configPath}
 }
 
 func (e *testEnv) clientFor(certPEM, keyPEM []byte) *http.Client {

@@ -7,20 +7,21 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"sync/atomic"
 )
 
-// TLSConfig loads the server certificate/key and the internal CA pool used
-// to verify client certificates, and returns a tls.Config for the agent's
-// listener.
-//
-// By default the handshake itself requires and verifies a client
-// certificate, so an unauthenticated peer never reaches the HTTP layer.
-// Only when allowAnonymousClients is true (the operator opted in to an
-// anonymous /health) is ClientAuth relaxed to tls.RequestClientCert, so one
-// listener can serve /health without a certificate; the HTTP middleware (see
-// Identity/Verify below) then still requires a verified identity on every
-// other route. Verify runs per request in both modes.
-func TLSConfig(certFile, keyFile, caFile string, allowAnonymousClients bool) (*tls.Config, error) {
+// Material is the part of the mTLS setup that can be replaced while the agent
+// runs: the server certificate and the CA pool client certificates are
+// verified against.
+type Material struct {
+	cert   tls.Certificate
+	caPool *x509.CertPool
+}
+
+// LoadMaterial reads and validates the server certificate/key pair and the
+// internal CA bundle. Nothing is returned on any error, so a caller keeps
+// whatever it already had.
+func LoadMaterial(certFile, keyFile, caFile string) (*Material, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("loading server certificate/key: %w", err)
@@ -34,13 +35,54 @@ func TLSConfig(certFile, keyFile, caFile string, allowAnonymousClients bool) (*t
 	if !pool.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("no valid certificates found in CA file %q", caFile)
 	}
+	return &Material{cert: cert, caPool: pool}, nil
+}
 
+// TLSState builds the agent's mTLS listener configuration and lets its
+// certificate and CA be replaced atomically while connections are being
+// accepted.
+//
+// By default the handshake itself requires and verifies a client
+// certificate, so an unauthenticated peer never reaches the HTTP layer.
+// Only when allowAnonymousClients is true (the operator opted in to an
+// anonymous /health) is ClientAuth relaxed to tls.RequestClientCert, so one
+// listener can serve /health without a certificate; the HTTP middleware (see
+// Identity/Verify below) then still requires a verified identity on every
+// other route. Verify runs per request in both modes.
+type TLSState struct {
+	allowAnonymousClients bool
+	material              atomic.Pointer[Material]
+}
+
+// NewTLSState loads the initial material.
+func NewTLSState(certFile, keyFile, caFile string, allowAnonymousClients bool) (*TLSState, error) {
+	m, err := LoadMaterial(certFile, keyFile, caFile)
+	if err != nil {
+		return nil, err
+	}
+	s := &TLSState{allowAnonymousClients: allowAnonymousClients}
+	s.material.Store(m)
+	return s, nil
+}
+
+// Replace makes m the material used by every later handshake. Connections
+// already established keep the server certificate they negotiated, but their
+// client certificate is re-verified against the current CA on every request
+// (see Verify), so a removed CA takes effect for them immediately.
+func (s *TLSState) Replace(m *Material) { s.material.Store(m) }
+
+// CAPool returns the CA pool currently in force.
+func (s *TLSState) CAPool() *x509.CertPool { return s.material.Load().caPool }
+
+// Config returns the listener's tls.Config. Each handshake gets a copy that
+// carries the material current at that moment.
+func (s *TLSState) Config() *tls.Config {
 	clientAuth := tls.RequireAndVerifyClientCert
-	if allowAnonymousClients {
+	if s.allowAnonymousClients {
 		clientAuth = tls.RequestClientCert
 	}
 
-	return &tls.Config{
+	base := &tls.Config{
 		// TLS 1.2 minimum: modern Jenkins/JVM and Go HTTP clients all
 		// support 1.3, but 1.2 is kept as a floor for compatibility with
 		// slightly older internal clients. Only forward-secret AEAD cipher
@@ -54,10 +96,21 @@ func TLSConfig(certFile, keyFile, caFile string, allowAnonymousClients bool) (*t
 			tls.X25519,
 			tls.CurveP256,
 		},
-		Certificates: []tls.Certificate{cert},
-		ClientCAs:    pool,
-		ClientAuth:   clientAuth,
-	}, nil
+		ClientAuth: clientAuth,
+	}
+
+	withMaterial := func(m *Material) *tls.Config {
+		c := base.Clone()
+		c.Certificates = []tls.Certificate{m.cert}
+		c.ClientCAs = m.caPool
+		return c
+	}
+
+	cfg := withMaterial(s.material.Load())
+	cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+		return withMaterial(s.material.Load()), nil
+	}
+	return cfg
 }
 
 // strongTLS12CipherSuites restricts a negotiated TLS 1.2 connection to

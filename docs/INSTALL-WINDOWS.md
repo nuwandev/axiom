@@ -267,9 +267,12 @@ NTFS terms.
 
 Same model as Linux ([`certificates.md`](certificates.md)): Axiom loads and
 verifies PEM files, never issues or renews them. Place `ca.crt`,
-`server.crt`, `server.key` in `%ProgramData%\Axiom\certs\`. Renewal requires
-a service restart (`Restart-Service axiom`) — there is no hot reload. The
-Windows certificate store is not used.
+`server.crt`, `server.key` in `%ProgramData%\Axiom\certs\`. After renewal, or
+after editing `authorization.identities`, apply the change without a restart:
+`sc.exe control axiom paramchange` (run elevated; see
+[`certificates.md`](certificates.md#reload-after-renewal) for what a reload
+covers and refuses). Any other config change needs `Restart-Service axiom`.
+The Windows certificate store is not used.
 
 ---
 

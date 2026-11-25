@@ -21,7 +21,7 @@
 <text x="116" y="294" class="ax-tm">/etc/axiom/config.yaml</text>
 <text x="56" y="314" class="ax-ts">Windows</text>
 <text x="116" y="314" class="ax-tm">%ProgramData%\Axiom\config.yaml</text>
-<text x="56" y="337" class="ax-ts">identities, actions, limits: read once</text>
+<text x="56" y="337" class="ax-ts">identities reload; actions, limits: read once</text>
 <rect x="40" y="366" width="500" height="108" rx="8" class="ax-box"/>
 <text x="56" y="392" class="ax-tb">Certificates</text>
 <text x="56" y="418" class="ax-ts">Linux</text>

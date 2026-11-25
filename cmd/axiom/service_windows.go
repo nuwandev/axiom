@@ -57,7 +57,10 @@ type serviceHandler struct {
 }
 
 func (h *serviceHandler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
-	const accepted = svc.AcceptStop | svc.AcceptShutdown
+	// ParamChange is how an operator asks a running service to re-read its
+	// configuration (`sc.exe control axiom paramchange`), the Windows
+	// counterpart of SIGHUP on Linux.
+	const accepted = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptParamChange
 
 	s <- svc.Status{State: svc.StartPending, WaitHint: 15000}
 
@@ -73,8 +76,13 @@ func (h *serviceHandler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	reload := make(chan struct{}, 1)
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, cfg, h.logger) }()
+	go func() {
+		done <- serveWithReload(ctx, cfg, h.logger, reload, func() (*config.Config, error) {
+			return config.Load(h.configPath)
+		})
+	}()
 
 	s <- svc.Status{State: svc.Running, Accepts: accepted}
 
@@ -84,6 +92,12 @@ func (h *serviceHandler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<
 			switch c.Cmd {
 			case svc.Interrogate:
 				s <- c.CurrentStatus
+			case svc.ParamChange:
+				// Coalesce: a reload already pending covers this request too.
+				select {
+				case reload <- struct{}{}:
+				default:
+				}
 			case svc.Stop, svc.Shutdown:
 				// WaitHint must comfortably exceed serve()'s own 30s HTTP
 				// drain so SCM does not misread a graceful shutdown as a hang.

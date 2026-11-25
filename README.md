@@ -313,8 +313,9 @@ command, by design.
 
 - **Certificates are external.** Axiom loads and verifies; it never issues,
   renews, or rotates. See [`docs/certificates.md`](docs/certificates.md)
-  for the lifecycle boundary, a safe renewal flow (restart required, no
-  hot-reload) and what to do if a client certificate is compromised.
+  for the lifecycle boundary, a safe renewal flow (reload on `SIGHUP` or
+  `sc.exe control axiom paramchange`, no restart) and what to do if a client
+  certificate is compromised.
 - Full threat model, including what is explicitly out of scope and why:
   [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md). Report vulnerabilities per
   [`SECURITY.md`](SECURITY.md), not as a public issue.

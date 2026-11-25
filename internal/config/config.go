@@ -566,7 +566,7 @@ func requireValidCertKeyPair(certPath, keyPath string) error {
 	}
 	// The key's own validity and its match against the certificate is
 	// verified by tls.LoadX509KeyPair when the TLS listener is built at
-	// startup (internal/auth.TLSConfig) — duplicating X.509/PKCS8 key
+	// startup (internal/auth.LoadMaterial) — duplicating X.509/PKCS8 key
 	// parsing here would just be two implementations of the same check.
 	if err := requireExistingFile(keyPath); err != nil {
 		return err

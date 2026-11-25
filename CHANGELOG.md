@@ -6,6 +6,24 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [Unreleased]
+
+### Added
+- **Live reload of identities and certificates.** `systemctl reload axiom`
+  (`SIGHUP`) on Linux and `sc.exe control axiom paramchange` on Windows
+  re-read the config file, `authorization.identities`, and the server
+  certificate, key and CA, without cancelling running jobs. A reload applies
+  completely or not at all: any load or validation error is logged and the
+  previous configuration stays in force. If the file also changes anything
+  that is read once (actions, listen address, limits, audit settings,
+  `agent.*`), the whole reload is refused and the log names those settings.
+  Open connections keep their negotiated server certificate, but client
+  certificates are re-checked against the current CA and identities on every
+  request. Reloads are logged, not written to the audit trail. The shipped
+  systemd unit gains `ExecReload`; it was not exercised under systemd, and
+  the Windows `paramchange` path has not been run against a real service
+  manager (the Linux signal path was run end to end).
+
 ## [2.1.0] — 2026-11-23
 
 Minor release. Both new settings are optional and off by default; one startup

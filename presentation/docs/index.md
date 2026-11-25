@@ -287,7 +287,7 @@ Implementation notes
 | Revocation | None: no CRL or OCSP | `auth.Verify` |
 
 !!! warning "Identity is only as strong as certificate issuance"
-    Because identity is the Common Name, the bank's CA must never let a requester choose it. A stolen client certificate keeps working until it expires or its identity is removed from the configuration and the agent is restarted. Short-lived, per-pipeline certificates are the available mitigation.
+    Because identity is the Common Name, the bank's CA must never let a requester choose it. A stolen client certificate keeps working until it expires or its identity is removed from the configuration and the agent is reloaded or restarted. Short-lived, per-pipeline certificates are the available mitigation.
 
 ## 8. Job execution {#jobs}
 
@@ -361,7 +361,7 @@ The external API, configuration schema, authentication and authorization are ide
 | Boundary | Enforced by | Source | What remains |
 |---|---|---|---|
 | Network to listener | Mutual TLS, one trust root | `auth.TLSConfig` | No revocation check; only triggers can be rate limited |
-| Identity to action | Default-deny allowlist keyed by CN | `Identity.IsAllowed`, `handleTriggerAction` | Changes need a restart; CN issuance is the CA's job |
+| Identity to action | Default-deny allowlist keyed by CN | `Identity.IsAllowed`, `handleTriggerAction` | Changes need a reload (`SIGHUP`) or restart; CN issuance is the CA's job |
 | Request to job manager | Schema, size, regex and parameter validation | `handlers.go`, `config.Parameter` | A script can still mishandle a validated value |
 | Job visibility | Owner-only status and logs | `ownedJob` | State is in memory only |
 | Axiom to script | No shell, fixed invocation, constructed environment, timeout, output cap, containment | `executor`, `jobs.buildEnv` | Axiom does not constrain what a script does |
@@ -383,15 +383,15 @@ The external API, configuration schema, authentication and authorization are ide
 | Graceful stop | New triggers get 503, HTTP drains up to 30 s, running jobs are cancelled and recorded as interrupted | `serve`, `Manager.Shutdown` |
 | Crash, SIGKILL or power loss | No finished record, job state lost; the child is killed by Pdeathsig or the Job Object | `executor` containment |
 | Trigger response lost | No idempotency key: an exclusive action answers 409, a shared action may run twice | `docs/jenkins-integration.md` |
-| Certificate or identity change | Takes effect only after a restart | `docs/certificates.md` |
+| Certificate or identity change | Applied by a reload, without cancelling jobs; a failed or restart-only reload changes nothing and is logged | `docs/certificates.md` |
 
 ### What Axiom does not do
 
 <div class="ax-ledger">
-<div><b>Check certificate revocation</b><span>A stolen client certificate keeps working until it expires or its identity is removed and the agent restarted.<em>internal/auth/auth.go, Verify</em></span></div>
-<div><b>Rate limit connections or non-trigger requests</b><span>Trigger requests can be limited per identity (added in v2.1.0), and only when <code>jobs.max_triggers_per_minute</code> is set (off by default). Connections, TLS handshakes and other requests are not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, docs/THREAT-MODEL.md</em></span></div>
+<div><b>Check certificate revocation</b><span>A stolen client certificate keeps working until it expires or its identity is removed and the agent reloaded or restarted.<em>internal/auth/auth.go, Verify</em></span></div>
+<div><b>Rate limit connections</b><span>Only triggers can be limited, per identity, and only when <code>jobs.max_triggers_per_minute</code> is set (off by default). Connections, TLS handshakes and other requests are not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, docs/THREAT-MODEL.md</em></span></div>
 <div><b>Prevent replay</b><span>A replayed request is indistinguishable from a repeated trigger. Exclusive actions answer 409 while running; shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
-<div><b>Reload configuration</b><span>Configuration, certificates and identities are read once. Changing any of them means a restart, which cancels running jobs.<em>docs/certificates.md</em></span></div>
+<div><b>Reload everything live</b><span>Only identities and the certificate files reload (<code>SIGHUP</code> on Linux, <code>paramchange</code> on Windows). Actions, listen address, limits and audit settings are read once; a reload that touches them is refused and a restart, which cancels running jobs, is required. Reloads are logged, not audited.<em>docs/certificates.md, internal/config/reload.go</em></span></div>
 <div><b>Persist job state</b><span>Status and logs vanish on restart or crash. The audit log is the durable record.<em>internal/jobs/manager.go</em></span></div>
 <div><b>Make Windows event-log entries tamper-proof</b><span>The Windows Event Log sink exists since v2.1.0, but its entries carry no sender attribute a script cannot also set, and the sink has not yet been run on a Windows Server host. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
 <div><b>Audit failed TLS handshakes</b><span>Handshake rejections never reach the audit log; they go to the standard logger on stderr.<em>cmd/axiom/main.go, no ErrorLog set</em></span></div>

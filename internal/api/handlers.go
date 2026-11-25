@@ -74,7 +74,7 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowed := s.cfg.Identities[identity.CommonName]
+	allowed := s.cfg.Load().Identities[identity.CommonName]
 	if !allowed.IsAllowed(action) {
 		if err := s.audit.Write(audit.Record{
 			Event:    audit.EventRejected,
@@ -256,7 +256,7 @@ type healthResponse struct {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{
 		Status:  "ok",
-		Agent:   s.cfg.AgentID,
+		Agent:   s.cfg.Load().AgentID,
 		Version: Version,
 	})
 }
