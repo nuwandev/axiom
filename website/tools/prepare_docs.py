@@ -80,8 +80,8 @@ PAGES = {
     ),
     "docs/audit-validation.md": (
         "audit-validation.md",
-        "Validating the Axiom audit trail on a real Linux host",
-        "Steps and evidence for checking that Axiom records accepted, started, finished and rejected events, and forwards them to journald or syslog.",
+        "Validating the Axiom audit path on a real host",
+        "Procedures for checking that Axiom audit records reach journald on Linux and the Application event log on Windows, including a fault-injection step.",
     ),
     "docs/WINDOWS-SERVER-2022-VALIDATION.md": (
         "windows-server-2022-validation.md",

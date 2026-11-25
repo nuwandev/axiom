@@ -34,7 +34,7 @@ nav = [
     { "Windows security" = "windows-security.md" },
   ] },
   { "Validation" = [
-    { "Linux audit path" = "audit-validation.md" },
+    { "Audit path" = "audit-validation.md" },
     { "Windows Server 2022" = "windows-server-2022-validation.md" },
   ] },
   { "Development" = "development.md" },
