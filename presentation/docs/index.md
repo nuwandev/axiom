@@ -22,7 +22,7 @@ title: Architecture presentation
 <li><a href="#introduction">Introduction</a><span>What Axiom is, what it is not, how to read this page</span></li>
 <li><a href="#environment">The banking infrastructure environment</a><span>CI/CD zone, firewall, bank zone and every traffic class</span></li>
 <li><a href="#topology">Axiom deployment topology</a><span>The agent on a managed host, and what the network must allow</span></li>
-<li><a href="#scenario">End-to-end deployment scenario</a><span>From a developer commit to a polled result</span></li>
+<li><a href="#scenario">End-to-end deployment scenario</a><span>From a pipeline trigger to a polled result</span></li>
 <li><a href="#internals">Internal architecture</a><span>Packages, responsibilities and source locations</span></li>
 <li><a href="#lifecycle">Request lifecycle</a><span>The audited path, including every rejection</span></li>
 <li><a href="#authn">Authentication and authorization</a><span>Certificate identity and the default-deny allowlist</span></li>
@@ -118,7 +118,7 @@ A host that Jenkins must act on runs its own agent, with its own configuration, 
 ## 4. End-to-end deployment scenario {#scenario}
 
 <ol class="ax-steps">
-<li>A developer triggers the Jenkins pipeline.</li>
+<li>A developer action or a source-control webhook starts the Jenkins pipeline.</li>
 <li>Jenkins checks out the application source.</li>
 <li>Jenkins builds, tests and publishes the artifact to the registry.</li>
 <li>The deployment stage invokes a predefined Axiom action.</li>
@@ -135,7 +135,7 @@ A host that Jenkins must act on runs its own agent, with its own configuration, 
 <div class="ax-mmd">
 --8<-- "mermaid/scenario.svg"
 </div>
-<figcaption>Figure 3. The deployment scenario. Responses travel on the connection Jenkins opened. Only Jenkins initiates.</figcaption>
+<figcaption>Figure 3. The deployment scenario. Responses travel on the connection Jenkins opened. Only Jenkins initiates; the pipeline itself can be started by a developer or a webhook.</figcaption>
 </figure>
 
 ### The API in detail
@@ -389,11 +389,11 @@ The external API, configuration schema, authentication and authorization are ide
 
 <div class="ax-ledger">
 <div><b>Check certificate revocation</b><span>A stolen client certificate keeps working until it expires or its identity is removed and the agent restarted.<em>internal/auth/auth.go, Verify</em></span></div>
-<div><b>Rate limit connections</b><span>Only triggers can be limited, per identity, and only when <code>jobs.max_triggers_per_minute</code> is set (off by default). Connections, TLS handshakes and other requests are not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, docs/THREAT-MODEL.md</em></span></div>
+<div><b>Rate limit connections or non-trigger requests</b><span>Trigger requests can be limited per identity (added in v2.1.0), and only when <code>jobs.max_triggers_per_minute</code> is set (off by default). Connections, TLS handshakes and other requests are not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, docs/THREAT-MODEL.md</em></span></div>
 <div><b>Prevent replay</b><span>A replayed request is indistinguishable from a repeated trigger. Exclusive actions answer 409 while running; shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
 <div><b>Reload configuration</b><span>Configuration, certificates and identities are read once. Changing any of them means a restart, which cancels running jobs.<em>docs/certificates.md</em></span></div>
 <div><b>Persist job state</b><span>Status and logs vanish on restart or crash. The audit log is the durable record.<em>internal/jobs/manager.go</em></span></div>
-<div><b>Attribute Windows event-log entries</b><span>Event-log entries carry no sender attribute a script cannot also set, and the sink has not yet been run on a Windows Server host. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
+<div><b>Make Windows event-log entries tamper-proof</b><span>The Windows Event Log sink exists since v2.1.0, but its entries carry no sender attribute a script cannot also set, and the sink has not yet been run on a Windows Server host. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
 <div><b>Audit failed TLS handshakes</b><span>Handshake rejections never reach the audit log; they go to the standard logger on stderr.<em>cmd/axiom/main.go, no ErrorLog set</em></span></div>
 <div><b>Restrict what a script does</b><span>Scripts may use the network and any resource the service account can reach. Axiom controls how a script is invoked, not its behaviour.<em>packaging/axiom.service, RestrictAddressFamilies</em></span></div>
 <div><b>Sign Windows binaries</b><span>The exe and MSI are not Authenticode-signed. Checksums and the Linux RPMs are GPG-signed, and releases carry build provenance and an SBOM.<em>README.md known gaps, SECURITY.md, docs/verifying-downloads.md</em></span></div>

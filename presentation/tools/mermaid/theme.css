@@ -35,3 +35,4 @@ g.stateGroup rect, .statediagram-state rect.basic {
 .statediagram-state .divider, g.stateGroup line { stroke: var(--ax-line, #a9a79d) !important; }
 .node rect, g.stateGroup rect, .statediagram-state rect.basic { rx: 8px !important; ry: 8px !important; stroke-width: 1.4px !important; }
 .actor, .labelBox, .note { rx: 6px; ry: 6px; }
+.stepNo { fill: var(--ax-ctl, #1f4fd8) !important; font-weight: 700 !important; }

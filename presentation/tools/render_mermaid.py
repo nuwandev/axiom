@@ -10,6 +10,7 @@ SVGs are checked in and Zensical inlines them.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -65,6 +66,9 @@ def render(out_dir: Path) -> list[Path]:
             )
             # Repository text files are LF; strip the CLI's trailing whitespace.
             text = out.read_text(encoding="utf-8").replace("\r\n", "\n").rstrip() + "\n"
+            # A leading "[n] " in a label becomes a bold step number, so it
+            # reads as a marker and not as part of the sentence.
+            text = re.sub(r"\[(\d+)\] ", r'<tspan class="stepNo">\1</tspan>&#160;&#160;', text)
             out.write_text(text, encoding="utf-8", newline="\n")
             outputs.append(out)
     return outputs
