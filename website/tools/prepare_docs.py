@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "website" / "docs"
-REPO = "https://github.com/nuwandev/axiom"
+REPO = "https://github.com/nuwandev/axiom-mtls-agent"
 
 # source (relative to repo root) -> (published name, title, description)
 PAGES = {

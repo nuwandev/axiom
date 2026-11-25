@@ -8,9 +8,9 @@
 site_name = "Axiom"
 site_description = "Axiom is an open source mTLS automation agent for Linux and Windows servers: trigger predefined deploy actions from CI/CD without SSH."
 site_author = "Theekshana Nuwan"
-site_url = "https://nuwandev.github.io/axiom/"
-repo_url = "https://github.com/nuwandev/axiom"
-repo_name = "nuwandev/axiom"
+site_url = "https://nuwandev.github.io/axiom-mtls-agent/"
+repo_url = "https://github.com/nuwandev/axiom-mtls-agent"
+repo_name = "nuwandev/axiom-mtls-agent"
 docs_dir = "docs"
 site_dir = "site"
 nav = [
@@ -38,7 +38,7 @@ nav = [
     { "Windows Server 2022" = "windows-server-2022-validation.md" },
   ] },
   { "Development" = "development.md" },
-  { "Architecture presentation" = "https://nuwandev.github.io/axiom/architecture/" },
+  { "Architecture presentation" = "https://nuwandev.github.io/axiom-mtls-agent/architecture/" },
 ]
 
 [project.theme]

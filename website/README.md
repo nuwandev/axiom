@@ -1,6 +1,6 @@
 # Documentation site
 
-The published documentation site (<https://nuwandev.github.io/axiom/>). It is
+The published documentation site (<https://nuwandev.github.io/axiom-mtls-agent/>). It is
 generated from `README.md` and `docs/*.md`, which stay the single source of
 truth: `tools/prepare_docs.py` copies them into `website/docs/` (git-ignored),
 adds a unique title and meta description per page, and rewrites links so
