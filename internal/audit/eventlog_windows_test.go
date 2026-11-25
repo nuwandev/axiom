@@ -41,18 +41,21 @@ func (f *fakeEventLog) Close() error { f.closed = true; return nil }
 func TestEventLogSink_MapsEventsToIDsAndLevels(t *testing.T) {
 	f := newFakeEventLog()
 	s := &eventLogSink{w: f}
-	for _, ev := range []string{EventAccepted, EventStarted, EventFinished, EventRejected} {
+	for _, ev := range []string{EventAccepted, EventStarted, EventFinished, EventRejected, EventReloaded, EventReloadFailed} {
 		if err := s.WriteRecord([]byte(`{"event":"` + ev + `","job_id":"J"}`)); err != nil {
 			t.Fatalf("WriteRecord(%s): %v", ev, err)
 		}
 	}
-	for ev, id := range map[string]uint32{EventAccepted: eventIDAccepted, EventStarted: eventIDStarted, EventFinished: eventIDFinished} {
+	for ev, id := range map[string]uint32{EventAccepted: eventIDAccepted, EventStarted: eventIDStarted, EventFinished: eventIDFinished, EventReloaded: eventIDReloaded} {
 		if len(f.infos[id]) != 1 || !strings.Contains(f.infos[id][0], `"event":"`+ev+`"`) {
 			t.Errorf("%s: want one informational event with ID %d, got %v", ev, id, f.infos[id])
 		}
 	}
 	if len(f.warnings[eventIDRejected]) != 1 {
 		t.Errorf("rejected: want one warning with ID %d, got %v", eventIDRejected, f.warnings)
+	}
+	if len(f.warnings[eventIDReloadFailed]) != 1 {
+		t.Errorf("reload_failed: want one warning with ID %d, got %v", eventIDReloadFailed, f.warnings)
 	}
 }
 

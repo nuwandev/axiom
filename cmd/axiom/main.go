@@ -154,15 +154,11 @@ func reloadOnSignal(ctx context.Context, server *api.Server, logger *slog.Logger
 		case <-ctx.Done():
 			return
 		case <-reload:
-			next, err := load()
-			if err == nil {
-				err = server.Reload(next)
-			}
-			if err != nil {
+			if err := server.ReloadFrom(load); err != nil {
 				logger.Error("configuration reload failed; still running with the previous configuration", "error", err)
 				continue
 			}
-			logger.Info("configuration reloaded", "identities", len(next.Identities))
+			logger.Info("configuration reloaded")
 		}
 	}
 }

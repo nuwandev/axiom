@@ -404,7 +404,7 @@ evidence, not a tamper-resistant record.**
 With `audit.syslog: true` every record is also emitted as one structured JSON
 message to the system log: journald/syslog on Linux (facility AUTH, identifier
 `axiom-audit`) and the Application event log on Windows (source `axiom`, event
-IDs 101 to 104). The paragraphs below describe the Linux path in detail; the
+IDs 101 to 106). The paragraphs below describe the Linux path in detail; the
 Windows differences are in the **Scope** note at the end of this section. The
 authoritative, tamper-resistant record is the collector the host forwards
 that stream to (for example a central SIEM), which the service account
@@ -444,7 +444,8 @@ write fail, so the action is refused rather than run unaudited.
 
 **Scope: Windows.** `audit.syslog: true` writes each record to the
 Application event log under the `axiom` source (`accepted`, `started` and
-`finished` as informational events 101 to 103, `rejected` as warning 104). The
+`finished` as informational events 101 to 103, `rejected` as warning 104,
+`reloaded` as informational 105 and `reload_failed` as warning 106). The
 fail-closed rules are the same as on Linux: an unregistered source stops the
 service from starting, and an event-log write failure refuses the action on the
 accept and start paths. A record over the 31,839-character event limit fails

@@ -40,6 +40,11 @@ const (
 	EventAccepted = "accepted"
 	EventStarted  = "started"
 	EventFinished = "finished"
+	// EventReloaded and EventReloadFailed record a configuration reload: the
+	// first with the identity changes it applied, the second with the reason
+	// it changed nothing.
+	EventReloaded     = "reloaded"
+	EventReloadFailed = "reload_failed"
 )
 
 // Record is one audit trail entry.

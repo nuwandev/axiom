@@ -53,3 +53,39 @@ func TestNonReloadableChanges(t *testing.T) {
 		})
 	}
 }
+
+func TestIdentityChanges(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{"identical", func(*Config) {}, "no identity changes"},
+		{"added", func(c *Config) { c.Identities["b"] = &Identity{Actions: []string{"x"}} }, "added: b"},
+		{"removed", func(c *Config) { c.Identities = map[string]*Identity{} }, "removed: i"},
+		{"changed", func(c *Config) { c.Identities["i"] = &Identity{Actions: []string{"x", "y"}} }, "changed: i"},
+		{"all three, sorted", func(c *Config) {
+			c.Identities = map[string]*Identity{"z": {Actions: []string{"x"}}, "a": {Actions: []string{"x"}}}
+		}, "added: a, z; removed: i"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			next := baseConfig()
+			tc.mutate(next)
+			if got := baseConfig().IdentityChanges(next); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Reordering or repeating an identity's actions grants and removes nothing, so
+// it must not be reported as a change.
+func TestIdentityChanges_IgnoresActionOrderAndDuplicates(t *testing.T) {
+	a, b := baseConfig(), baseConfig()
+	a.Identities["i"] = &Identity{Actions: []string{"x", "y"}}
+	b.Identities["i"] = &Identity{Actions: []string{"y", "x", "y"}}
+	if got := a.IdentityChanges(b); got != "no identity changes" {
+		t.Fatalf("got %q", got)
+	}
+}

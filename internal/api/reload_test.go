@@ -237,3 +237,54 @@ func TestReload_CRLNotSignedByTrustedCAIsRefused(t *testing.T) {
 		t.Fatalf("status = %d, want 202: a refused reload must change nothing", got)
 	}
 }
+
+func (e *testEnv) auditLines() string {
+	e.t.Helper()
+	data, err := os.ReadFile(e.cfg.AuditLogPath)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestReloadFrom_AuditsWhoGainedAccess(t *testing.T) {
+	env := newTestEnv(t, nil)
+	next := env.editConfig("    ci-jenkins:", "    ci-new:\n      actions:\n        - sample.action\n    ci-jenkins:")
+
+	if err := env.srv.ReloadFrom(func() (*config.Config, error) { return next, nil }); err != nil {
+		t.Fatalf("ReloadFrom: %v", err)
+	}
+	log := env.auditLines()
+	if !strings.Contains(log, `"event":"reloaded"`) || !strings.Contains(log, "added: ci-new") {
+		t.Fatalf("audit log lacks the reload record:\n%s", log)
+	}
+}
+
+func TestReloadFrom_AuditsAFailedReloadAndKeepsServing(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 50)
+	client := env.clientFor(certPEM, keyPEM)
+
+	err := env.srv.ReloadFrom(func() (*config.Config, error) { return nil, os.ErrNotExist })
+	if err == nil {
+		t.Fatal("ReloadFrom reported success for a config that failed to load")
+	}
+	if log := env.auditLines(); !strings.Contains(log, `"event":"reload_failed"`) {
+		t.Fatalf("audit log lacks the failed-reload record:\n%s", log)
+	}
+	if got := env.triggerStatus(client); got != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: a failed reload must keep serving", got)
+	}
+}
+
+func TestReloadFrom_AuditsARefusedRestartOnlyChange(t *testing.T) {
+	env := newTestEnv(t, nil)
+	next := env.editConfig("port: 18443", "port: 18444")
+
+	if err := env.srv.ReloadFrom(func() (*config.Config, error) { return next, nil }); err == nil {
+		t.Fatal("a restart-only change was applied")
+	}
+	if log := env.auditLines(); !strings.Contains(log, `"event":"reload_failed"`) || !strings.Contains(log, "ListenPort") {
+		t.Fatalf("audit log should record why the reload changed nothing:\n%s", log)
+	}
+}

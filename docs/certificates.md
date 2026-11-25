@@ -46,9 +46,14 @@ as one step.
   certificate is checked against the current CA and identity list on every
   request, so a removed identity or a rotated-out CA stops working
   immediately, even on open connections.
-- **Reloads are logged, not audited.** The outcome goes to the service log
-  (`configuration reloaded` with the identity count, or the failure). It is
-  not written to the audit trail.
+- **Every reload is audited.** A successful one writes a `reloaded` record
+  whose `reason` says who gained or lost access (`added: ...; removed: ...;
+  changed: ...`, or `no identity changes`). A failed or refused one writes
+  `reload_failed` with the reason. The outcome is also in the service log. The
+  audit record is written after the change is applied, because a reload is
+  only known to be valid once applied, so unlike `accepted` and `started` it
+  cannot gate the reload: if that write fails, the reload stands and the
+  failure is logged as an error.
 
 Console runs on Windows (`axiom.exe` outside the service) have no reload
 trigger.

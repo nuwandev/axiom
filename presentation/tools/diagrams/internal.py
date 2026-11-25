@@ -69,7 +69,7 @@ aud = (560, 586, 480, 168)
 exe = (1080, 586, 460, 168)
 box(*cfg, "Configuration", "internal/config/config.go \u00b7 Load, validate",
     ["strict YAML, fail-closed at startup", "identities \u2192 allowlists, actions, limits",
-     "parameter patterns compiled as ^(?:\u2026)$", "script, cert, key, ancestor integrity", "read once: no hot reload"])
+     "parameter patterns compiled as ^(?:\u2026)$", "script, cert, key, ancestor integrity", "identities, certs reload on SIGHUP"])
 box(*aud, "Audit subsystem", "internal/audit/audit.go \u00b7 Logger.Write",
     ["stamp, truncate to 512 B, redact secret names", "append JSONL line, fsync, then each Sink",
      "error returned: accepted, started fail closed", "Sink: syslog (unix), Event Log (Windows)"], "ax-box ax-box-aud")

@@ -46,7 +46,9 @@ backward-compatible additions bump minor; fixes bump patch.
   `agent.*`), the whole reload is refused and the log names those settings.
   Open connections keep their negotiated server certificate, but client
   certificates are re-checked against the current CA and identities on every
-  request. Reloads are logged, not written to the audit trail. The shipped
+  request. Every reload is audited: `reloaded` (with the identities added,
+  removed or changed) or `reload_failed` (with the reason), Windows event IDs
+  105 and 106. The audit write follows the change and cannot gate it. The shipped
   systemd unit gains `ExecReload`; it was not exercised under systemd, and
   the Windows `paramchange` path has not been run against a real service
   manager (the Linux signal path was run end to end).

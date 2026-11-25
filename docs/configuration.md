@@ -193,9 +193,11 @@ the platform's system log. The setting keeps its name on both platforms:
 - **Linux:** journald/syslog (facility AUTH, identifier `axiom-audit`). Axiom
   refuses to start if the syslog socket is unavailable.
 - **Windows:** the Application event log, source `axiom` (registered by the
-  installer). Each record is the event text. `rejected` records are warnings;
-  `accepted`, `started` and `finished` are informational with event IDs 101,
-  102 and 103 (`rejected` is 104), so a collector can filter on them. Axiom
+  installer). Each record is the event text. `rejected` and `reload_failed`
+  records are warnings; `accepted`, `started` and `finished` are informational
+  with event IDs 101, 102 and 103 (`rejected` is 104), and a configuration
+  reload is 105 (`reloaded`, informational) or 106 (`reload_failed`, warning),
+  so a collector can filter on them. Axiom
   refuses to start if the source is not registered. One event string is limited
   to 31,839 characters, and a record over that limit is not truncated: the
   write fails.

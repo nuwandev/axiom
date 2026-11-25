@@ -24,6 +24,9 @@ const (
 	eventIDStarted  uint32 = 102
 	eventIDFinished uint32 = 103
 	eventIDRejected uint32 = 104
+	// Reload outcomes: 105 is informational, 106 a warning.
+	eventIDReloaded     uint32 = 105
+	eventIDReloadFailed uint32 = 106
 )
 
 // maxEventLogMessageChars is the Windows limit for one event string. A record
@@ -97,6 +100,10 @@ func (s *eventLogSink) WriteRecord(line []byte) error {
 		return s.w.Info(eventIDFinished, msg)
 	case EventRejected:
 		return s.w.Warning(eventIDRejected, msg)
+	case EventReloaded:
+		return s.w.Info(eventIDReloaded, msg)
+	case EventReloadFailed:
+		return s.w.Warning(eventIDReloadFailed, msg)
 	default:
 		return fmt.Errorf("unknown audit event %q", head.Event)
 	}

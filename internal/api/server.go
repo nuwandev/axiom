@@ -51,6 +51,29 @@ func NewServer(cfg *config.Config, jobMgr *jobs.Manager, auditLogger *audit.Logg
 	return s, nil
 }
 
+// ReloadFrom loads a configuration, applies it with Reload, and writes the
+// outcome to the audit trail: who gained or lost access on success, or why
+// nothing changed on failure. The audit write cannot gate the reload, because
+// the change is only known to be valid once it has been applied, so a failed
+// audit write is logged as an error instead.
+func (s *Server) ReloadFrom(load func() (*config.Config, error)) error {
+	next, err := load()
+	summary := ""
+	if err == nil {
+		summary = s.cfg.Load().IdentityChanges(next)
+		err = s.Reload(next)
+	}
+
+	rec := audit.Record{Event: audit.EventReloaded, Reason: summary}
+	if err != nil {
+		rec = audit.Record{Event: audit.EventReloadFailed, Reason: err.Error()}
+	}
+	if auditErr := s.audit.Write(rec); auditErr != nil {
+		s.logger.Error("audit write failed for configuration reload", "error", auditErr)
+	}
+	return err
+}
+
 // Reload applies next to the running server. Only identities and the
 // certificate files are reloadable; if anything else differs, nothing is
 // applied and the error names what needs a restart. The new certificate
