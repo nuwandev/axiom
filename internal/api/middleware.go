@@ -30,7 +30,7 @@ func (s *Server) withIdentity(next http.Handler) http.Handler {
 			return
 		}
 
-		id, err := auth.Verify(r.TLS.PeerCertificates, s.tls.CAPool())
+		id, err := s.tls.Verify(r.TLS.PeerCertificates)
 		if err != nil {
 			if anonymousHealth {
 				next.ServeHTTP(w, r)

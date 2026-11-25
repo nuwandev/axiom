@@ -284,7 +284,7 @@ Implementation notes
 | Identity | Leaf Common Name only; SANs are ignored | `auth.Identity` |
 | Authorization | Exact-string membership in a per-identity list; default deny | `config.Identity.IsAllowed` |
 | Job access | A job is visible only to the identity that triggered it | `ownedJob` |
-| Revocation | None: no CRL or OCSP | `auth.Verify` |
+| Revocation | Optional CRL file, checked on every request; no OCSP | `auth.TLSState.Verify` |
 
 !!! warning "Identity is only as strong as certificate issuance"
     Because identity is the Common Name, the bank's CA must never let a requester choose it. A stolen client certificate keeps working until it expires or its identity is removed from the configuration and the agent is reloaded or restarted. Short-lived, per-pipeline certificates are the available mitigation.
@@ -343,7 +343,7 @@ What the audit trail guarantees, and what it does not
 - Each write is flushed with `fsync` before the call returns, and any sink error is returned to the caller, which is what makes the accepted and started records fail closed.
 - Redaction is by parameter name (names containing `token`, `secret`, `pass`, `key`, `cert` and similar). A secret carried in a parameter with an innocent name would be written verbatim.
 - The local file is owned by the account that runs scripts, so that account can alter it. Tamper resistance comes from the collector, not the file.
-- Failed TLS handshakes never reach this log. `net/http` writes them to its default logger on stderr, so failed-authentication monitoring needs the network layer.
+- Failed TLS handshakes never reach this log. `net/http` reports them to the structured service log at `WARN`, so failed-authentication monitoring means collecting that log or watching the network layer.
 
 ## 10. Linux and Windows implementations {#platforms}
 
@@ -360,7 +360,7 @@ The external API, configuration schema, authentication and authorization are ide
 
 | Boundary | Enforced by | Source | What remains |
 |---|---|---|---|
-| Network to listener | Mutual TLS, one trust root | `auth.TLSConfig` | No revocation check; only triggers can be rate limited |
+| Network to listener | Mutual TLS, one trust root | `auth.TLSState` | Revocation only through an operator-supplied CRL; only triggers can be rate limited, connections only capped |
 | Identity to action | Default-deny allowlist keyed by CN | `Identity.IsAllowed`, `handleTriggerAction` | Changes need a reload (`SIGHUP`) or restart; CN issuance is the CA's job |
 | Request to job manager | Schema, size, regex and parameter validation | `handlers.go`, `config.Parameter` | A script can still mishandle a validated value |
 | Job visibility | Owner-only status and logs | `ownedJob` | State is in memory only |
@@ -382,19 +382,19 @@ The external API, configuration schema, authentication and authorization are ide
 | Panic in a job goroutine | Recovered, job failed, finished record written | `Manager.run` |
 | Graceful stop | New triggers get 503, HTTP drains up to 30 s, running jobs are cancelled and recorded as interrupted | `serve`, `Manager.Shutdown` |
 | Crash, SIGKILL or power loss | No finished record, job state lost; the child is killed by Pdeathsig or the Job Object | `executor` containment |
-| Trigger response lost | No idempotency key: an exclusive action answers 409, a shared action may run twice | `docs/jenkins-integration.md` |
+| Trigger response lost | With an `Idempotency-Key`: the retry returns the original job and starts nothing. Without one: an exclusive action answers 409, a shared action may run twice | `Manager.TriggerIdempotent`, `docs/jenkins-integration.md` |
 | Certificate or identity change | Applied by a reload, without cancelling jobs; a failed or restart-only reload changes nothing and is logged | `docs/certificates.md` |
 
 ### What Axiom does not do
 
 <div class="ax-ledger">
-<div><b>Check certificate revocation</b><span>A stolen client certificate keeps working until it expires or its identity is removed and the agent reloaded or restarted.<em>internal/auth/auth.go, Verify</em></span></div>
-<div><b>Rate limit connections</b><span>Only triggers can be limited, per identity, and only when <code>jobs.max_triggers_per_minute</code> is set (off by default). Connections, TLS handshakes and other requests are not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, docs/THREAT-MODEL.md</em></span></div>
-<div><b>Prevent replay</b><span>A replayed request is indistinguishable from a repeated trigger. Exclusive actions answer 409 while running; shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
-<div><b>Reload everything live</b><span>Only identities and the certificate files reload (<code>SIGHUP</code> on Linux, <code>paramchange</code> on Windows). Actions, listen address, limits and audit settings are read once; a reload that touches them is refused and a restart, which cancels running jobs, is required. Reloads are logged, not audited.<em>docs/certificates.md, internal/config/reload.go</em></span></div>
+<div><b>Fetch revocation data</b><span>Axiom checks a CRL file you supply (<code>security.mtls.crl_file</code>, off by default), never fetches one and has no OCSP. Without a list, a stolen client certificate keeps working until it expires or its identity is removed and the agent reloaded. A list past its <code>nextUpdate</code> makes every client fail until a fresh one is reloaded.<em>internal/auth/revocation.go</em></span></div>
+<div><b>Rate limit connections</b><span>Triggers can be limited per identity (<code>jobs.max_triggers_per_minute</code>) and open connections capped (<code>agent.listen.max_connections</code>); both are off by default. The rate of new connections, TLS handshakes and other requests is not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, cmd/axiom/limitlistener.go, docs/THREAT-MODEL.md</em></span></div>
+<div><b>Stop an attacker replaying a request</b><span>A replayed request is indistinguishable from a repeated trigger. An optional <code>Idempotency-Key</code> makes a client's own retries safe, but an attacker can omit it. Exclusive actions answer 409 while running; shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
+<div><b>Reload everything live</b><span>Only identities, the certificate files and the CRL reload (<code>SIGHUP</code> on Linux, <code>paramchange</code> on Windows). Actions, listen address, limits and audit settings are read once; a reload that touches them is refused and a restart, which cancels running jobs, is required. Reloads are logged, not audited.<em>docs/certificates.md, internal/config/reload.go</em></span></div>
 <div><b>Persist job state</b><span>Status and logs vanish on restart or crash. The audit log is the durable record.<em>internal/jobs/manager.go</em></span></div>
 <div><b>Make Windows event-log entries tamper-proof</b><span>The Windows Event Log sink exists since v2.1.0, but its entries carry no sender attribute a script cannot also set, and the sink has not yet been run on a Windows Server host. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
-<div><b>Audit failed TLS handshakes</b><span>Handshake rejections never reach the audit log; they go to the standard logger on stderr.<em>cmd/axiom/main.go, no ErrorLog set</em></span></div>
+<div><b>Audit failed TLS handshakes</b><span>Handshake rejections never reach the audit log, deliberately: an unauthenticated peer must not cause a synced audit write per attempt. They are logged at <code>WARN</code> by the structured service log.<em>cmd/axiom/main.go, ErrorLog</em></span></div>
 <div><b>Restrict what a script does</b><span>Scripts may use the network and any resource the service account can reach. Axiom controls how a script is invoked, not its behaviour.<em>packaging/axiom.service, RestrictAddressFamilies</em></span></div>
 <div><b>Sign Windows binaries</b><span>The exe and MSI are not Authenticode-signed. Checksums and the Linux RPMs are GPG-signed, and releases carry build provenance and an SBOM.<em>README.md known gaps, SECURITY.md, docs/verifying-downloads.md</em></span></div>
 </div>

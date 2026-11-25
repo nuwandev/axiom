@@ -61,6 +61,9 @@ type testEnvOptions struct {
 	slowAction bool
 	// unlistedAction adds "frontend.deploy", which no identity may run.
 	unlistedAction bool
+	// paramAction adds "param.action" (one required "tag" parameter), allowed
+	// for ci-jenkins.
+	paramAction bool
 }
 
 func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
@@ -82,6 +85,11 @@ func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
 		slow := writeFile(t, dir, "slow.sh", []byte("#!/bin/sh\nsleep 5\n"), 0o750)
 		opts.extraActionsYAML += "  slow.action:\n    command: " + slow + "\n    timeout: 10s\n    concurrency: shared\n"
 	}
+	if opts.paramAction {
+		param := writeFile(t, dir, "param.sh", []byte("#!/bin/sh\nexit 0\n"), 0o750)
+		opts.extraActionsYAML += "  param.action:\n    command: " + param + "\n    timeout: 5s\n    concurrency: shared\n" +
+			"    parameters:\n      tag:\n        type: string\n        pattern: '[a-z0-9.]+'\n        required: true\n"
+	}
 	if opts.unlistedAction {
 		// A script owned by the test user, not a system binary: /bin/true is a
 		// symlink on some distributions and config.Load rejects symlinks.
@@ -91,6 +99,9 @@ func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
 	identityExtra := ""
 	if opts.slowAction {
 		identityExtra = "        - slow.action\n"
+	}
+	if opts.paramAction {
+		identityExtra += "        - param.action\n"
 	}
 	healthBlock := ""
 	if opts.healthAnonymous {

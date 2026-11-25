@@ -12,6 +12,7 @@ var reloadableFields = map[string]bool{
 	"CAFile":     true,
 	"CertFile":   true,
 	"KeyFile":    true,
+	"CRLFile":    true,
 }
 
 // NonReloadableChanges returns the names of the Config fields that differ

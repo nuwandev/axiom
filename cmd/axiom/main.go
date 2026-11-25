@@ -103,12 +103,22 @@ func serveWithReload(ctx context.Context, cfg *config.Config, logger *slog.Logge
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    32 * 1024,
+		// Failed TLS handshakes (no or untrusted client certificate) are
+		// logged by net/http through this logger. Without it they go to the
+		// process's default logger as unstructured stderr lines. They are
+		// still not audit records: an unauthenticated peer must not be able
+		// to cause a synced audit write per connection attempt.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 
-	listener, err := tls.Listen("tcp", addr, tlsConfig)
+	tcpListener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", addr, err)
 	}
+	if cfg.MaxConnections > 0 {
+		tcpListener = newLimitListener(tcpListener, cfg.MaxConnections)
+	}
+	listener := tls.NewListener(tcpListener, tlsConfig)
 
 	serveErr := make(chan error, 1)
 	go func() {

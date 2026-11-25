@@ -15,12 +15,18 @@ agent:
   listen:
     address: 0.0.0.0
     port: 8443
+    # max_connections: 256   # optional, off (0) by default: most connections
+    #                        # open at once, TLS handshakes included.
 
 security:
   mtls:
     ca_file: C:\ProgramData\Axiom\certs\ca.crt
     cert_file: C:\ProgramData\Axiom\certs\server.crt
     key_file: C:\ProgramData\Axiom\certs\server.key
+    # crl_file: C:\ProgramData\Axiom\certs\ca.crl   # optional: revoked client
+    #                                               # certificates, signed by ca_file;
+    #                                               # re-read on reload. Refuses every
+    #                                               # client after its nextUpdate.
   # health:
   #   allow_anonymous: true   # off by default; opt in only if your network
   #                           # health check cannot present a client cert.
@@ -44,6 +50,8 @@ jobs:
   # max_triggers_per_minute: 60   # optional, off (0) by default: most triggers one
   #                               # identity may make per minute; over it a trigger
   #                               # gets 429 with Retry-After and creates no job.
+  # idempotency_window: 10m       # optional, default 10m: how long an Idempotency-Key
+  #                               # sent with a trigger is remembered (1s-24h).
 
 actions:
   # Trigger this first after a fresh install to confirm mTLS, authorization,

@@ -61,7 +61,8 @@ could be toggled.
   [`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior)).
 - **Replay.** Requests have no nonce or timestamp; mTLS channel security,
   exclusive-concurrency locking and full audit visibility cover this (see
-  `THREAT-MODEL.md` §8).
+  `THREAT-MODEL.md` §8). An optional `Idempotency-Key` header makes a client's
+  own retries safe; it is not a defence against an attacker.
 
 ## Full threat model
 

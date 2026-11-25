@@ -19,7 +19,7 @@ could itself become a target for certificate-forging attacks.
 
 ## Reload after renewal
 
-Axiom re-reads `ca_file`, `cert_file`, `key_file` and
+Axiom re-reads `ca_file`, `cert_file`, `key_file`, `crl_file` and
 `authorization.identities` when asked to, without a restart and without
 cancelling running jobs. There is no file-watcher and no background renewal
 worker: nothing changes until you trigger a reload.
@@ -138,9 +138,13 @@ otherwise, with a specific error naming the problem — see
 
 ## If a client certificate is compromised
 
-Axiom does **not** check certificate revocation (no CRL or OCSP). A stolen
-client certificate whose CA-signed chain is still valid keeps working for its
-identity until it expires or that identity is removed from the config. So:
+Axiom checks revocation only if you give it a CRL (`security.mtls.crl_file`,
+see [`configuration.md`](configuration.md)); there is no OCSP and it never
+fetches a list itself. Without a CRL, a stolen client certificate whose
+CA-signed chain is still valid keeps working for its identity until it expires
+or that identity is removed from the config. With one, publish a new CRL that
+lists the certificate's serial number and reload; the certificate is refused
+from the next request, even on open connections. Either way:
 
 1. **Disable the identity immediately.** Remove its entry under
    `authorization.identities` (or just the actions it must not run) in

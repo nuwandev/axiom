@@ -25,7 +25,21 @@ agent:
   listen:
     address: 0.0.0.0
     port: 8443
+    # max_connections: 256   # optional, off (0) by default: most connections
+    #                        # open at once, TLS handshakes included
 ```
+
+**Connection cap.** `agent.listen.max_connections` (0-100000, default 0 = off)
+limits how many connections are open at the same time. A connection counts from
+the moment it is accepted, so peers stalled in the TLS handshake use slots too.
+At the cap Axiom stops accepting; further clients wait in the operating
+system's listen backlog and are served as slots free up, and the existing
+HTTP timeouts (10 s to send headers, 2 min idle) release slots held by stalled
+peers. Set it above the number of concurrent clients a legitimate pipeline
+needs. It is restart-only. Failed handshakes are logged at `WARN` by the
+structured logger (`http: TLS handshake error from ...`); they are not audit
+records, so an unauthenticated peer cannot cause a synced audit write per
+attempt.
 
 ## Listener / TLS / mTLS
 
@@ -35,6 +49,7 @@ security:
     ca_file: /etc/axiom/certs/ca.crt        # internal CA — the trust root for client certs
     cert_file: /etc/axiom/certs/server.crt  # this agent's certificate
     key_file: /etc/axiom/certs/server.key   # this agent's private key
+    # crl_file: /etc/axiom/certs/ca.crl     # optional certificate revocation list
   health:
     allow_anonymous: false   # default; only set true if a network health
                               # check genuinely cannot present a client cert
@@ -45,6 +60,23 @@ the default) requires a client certificate that chain-verifies against
 `ca_file`. TLS 1.2 minimum, with cipher suites restricted to forward-secret
 AEAD suites on a 1.2 handshake (TLS 1.3 uses the standard library's fixed
 strong suite set).
+
+**Revocation list.** `security.mtls.crl_file` is optional. When set, a client
+certificate whose serial number is listed is refused with `401` and an audit
+`rejected` record, on every request, so a revocation also applies to
+connections that are already open. The file is a PEM or DER CRL that must be
+signed by a CA in `ca_file`, and it is held to the same ownership and
+directory rules as the CA file, because anyone who can edit it can un-revoke a
+certificate. Axiom reads it at startup and on reload
+([`certificates.md`](certificates.md#reload-after-renewal)); it never fetches
+it, and it does not do OCSP. Only the client certificate itself is checked, not
+intermediates in its chain.
+
+The list is trusted only until its `nextUpdate` time. At startup or reload an
+already expired list is refused. If it expires while the agent runs, every
+client is refused until a fresh list is published and reloaded: after
+`nextUpdate` the list may be missing revocations, so Axiom fails closed
+rather than keep trusting it. Refresh the file and reload before then.
 
 ## Actions
 
@@ -122,6 +154,14 @@ at `jobs.max_concurrent`, so a flood cannot turn into synced audit writes. The
 limit is off by default so an upgrade changes no behaviour; set it to the
 highest rate a legitimate pipeline needs.
 
+**Idempotency window.** `jobs.idempotency_window` (1s-24h, default `10m`) is how
+long an `Idempotency-Key` sent with a trigger is remembered. Within it, the same
+identity, action and key returns the original job and starts nothing; see
+[`jenkins-integration.md`](jenkins-integration.md#job_id-and-what-a-lost-connection-means)
+for the client rules. Keys live in memory (lost on restart), at most 10,000 are
+held at once, and past that new keys get `429` while existing ones keep working.
+Requests without the header are unaffected. It is restart-only.
+
 **Memory bound.** Finished jobs keep their captured output in memory until
 evicted. The worst case is roughly
 `max_history x 2 streams x output.max_bytes` plus the same for running jobs:
@@ -129,10 +169,11 @@ about 4 GiB at the defaults (1000 x 2 x 2 MiB), if every job fills both
 streams. Size these to the host: for example `max_history: 200` and
 `max_bytes: 1048576` bound retained output at about 400 MiB. Per-request
 limits: body 64 KiB, 64 parameters, 4096 bytes per value; HTTP header and
-timeout limits are fixed in `cmd/axiom/main.go`. Axiom does not limit
-connections, TLS handshakes or requests other than triggers; put it behind
-your network controls, and add systemd limits (`MemoryMax`, `TasksMax`, `LimitNOFILE`) in the unit for
-resource containment of the whole process tree.
+timeout limits are fixed in `cmd/axiom/main.go`. Connections can be capped with
+`agent.listen.max_connections`; Axiom does not rate limit new connections, TLS
+handshakes or requests other than triggers, so keep it behind your network
+controls, and add systemd limits (`MemoryMax`, `TasksMax`, `LimitNOFILE`) in
+the unit for resource containment of the whole process tree.
 
 Job history is in-memory only and does not survive a restart — the audit
 log (`audit.path`, default `/var/log/axiom/audit.log`) is the durable

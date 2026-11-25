@@ -64,6 +64,7 @@ type Manager struct {
 	maxHistory     int
 	maxConcurrent  int
 	limiter        *rateLimiter // nil when jobs.max_triggers_per_minute is 0
+	idem           *idempotencyStore
 
 	mu       sync.Mutex
 	active   int            // queued+running jobs holding a slot; guarded by mu
@@ -97,6 +98,7 @@ func NewManager(cfg *config.Config, auditLogger *audit.Logger, logger *slog.Logg
 	}
 	return &Manager{
 		limiter:        limiter,
+		idem:           newIdempotencyStore(idempotencyWindow(cfg), time.Now),
 		cfg:            cfg,
 		audit:          auditLogger,
 		logger:         logger,

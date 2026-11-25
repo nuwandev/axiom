@@ -9,6 +9,33 @@ backward-compatible additions bump minor; fixes bump patch.
 ## [Unreleased]
 
 ### Added
+- **Idempotency keys for triggers.** `POST /v1/actions/{action}` accepts an
+  optional `Idempotency-Key` header (1-128 characters from `A-Za-z0-9._:-`).
+  Within `jobs.idempotency_window` (1s-24h, default 10m) the same identity,
+  action and key returns the job the first request started (`202`, same
+  `job_id`, current `status`, `Idempotent-Replay: true`) and starts nothing,
+  so a client can retry after a lost response without running a shared action
+  twice. The same key with different parameters is `422`; a malformed or
+  repeated header is `400`; a refused request does not use up its key; a
+  replay is not charged to the rate limit or job cap. Keys are in memory only
+  (forgotten on restart) and at most 10,000 are held, past which new keys get
+  `429`. This protects against a client's own retries, not an attacker, who can
+  omit the header. Requests without the header behave as before.
+- **Certificate revocation list.** Optional `security.mtls.crl_file` (PEM or
+  DER, signed by a CA in `ca_file`, held to the same ownership checks as the
+  CA). A listed client certificate is refused with `401` and an audit
+  `rejected` record on every request, including on open connections. The list
+  is re-read on reload, is never fetched, and there is no OCSP. A list past its
+  `nextUpdate` is refused at load, and if it expires while running every client
+  is refused until a fresh list is reloaded. Only the client certificate is
+  checked, not intermediates.
+- **Connection cap.** Optional `agent.listen.max_connections` (0-100000,
+  default 0 = off). Counted from accept, so connections stalled in the TLS
+  handshake use slots; at the cap Axiom stops accepting and excess clients wait
+  in the listen backlog. Restart-only.
+- **Failed TLS handshakes are now logged through the structured service log**
+  at `WARN` instead of unstructured lines on the default logger. They are still
+  not audit records.
 - **Live reload of identities and certificates.** `systemctl reload axiom`
   (`SIGHUP`) on Linux and `sc.exe control axiom paramchange` on Windows
   re-read the config file, `authorization.identities`, and the server

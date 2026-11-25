@@ -3,8 +3,11 @@
 package api
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"os"
 	"strings"
@@ -165,5 +168,72 @@ func TestReload_CARotationAppliesToExistingAndNewConnections(t *testing.T) {
 	}
 	if got := env.triggerStatus(newClient); got != http.StatusAccepted {
 		t.Fatalf("new-CA client: status = %d, want 202", got)
+	}
+}
+
+// crl returns a PEM CRL signed by ca that revokes the given serial numbers.
+func (ca *testCA) crl(t *testing.T, revoked ...int64) []byte {
+	t.Helper()
+	var entries []x509.RevocationListEntry
+	for _, s := range revoked {
+		entries = append(entries, x509.RevocationListEntry{SerialNumber: big.NewInt(s), RevocationTime: time.Now().Add(-time.Minute)})
+	}
+	der, err := x509.CreateRevocationList(rand.Reader, &x509.RevocationList{
+		Number:                    big.NewInt(1),
+		ThisUpdate:                time.Now().Add(-time.Minute),
+		NextUpdate:                time.Now().Add(time.Hour),
+		RevokedCertificateEntries: entries,
+	}, ca.cert, ca.key)
+	if err != nil {
+		t.Fatalf("creating CRL: %v", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: der})
+}
+
+func TestReload_CRLRevokesCertificateOnOpenConnection(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 30)
+	client := env.clientFor(certPEM, keyPEM)
+	if got := env.triggerStatus(client); got != http.StatusAccepted {
+		t.Fatalf("before revocation: status = %d, want 202", got)
+	}
+
+	next := *env.cfg
+	next.CRLFile = writeFile(t, env.dir, "revoked.crl", env.ca.crl(t, 30), 0o644)
+	if err := env.srv.Reload(&next); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if got := env.triggerStatus(client); got != http.StatusUnauthorized {
+		t.Fatalf("after revocation: status = %d, want 401", got)
+	}
+}
+
+func TestReload_CRLLeavesOtherCertificatesWorking(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 31)
+	client := env.clientFor(certPEM, keyPEM)
+
+	next := *env.cfg
+	next.CRLFile = writeFile(t, env.dir, "other.crl", env.ca.crl(t, 99), 0o644)
+	if err := env.srv.Reload(&next); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if got := env.triggerStatus(client); got != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: serial 31 is not revoked", got)
+	}
+}
+
+func TestReload_CRLNotSignedByTrustedCAIsRefused(t *testing.T) {
+	env := newTestEnv(t, nil)
+	certPEM, keyPEM := env.ca.issue(t, "ci-jenkins", x509.ExtKeyUsageClientAuth, 32)
+	client := env.clientFor(certPEM, keyPEM)
+
+	next := *env.cfg
+	next.CRLFile = writeFile(t, env.dir, "foreign.crl", newTestCA(t).crl(t, 32), 0o644)
+	if err := env.srv.Reload(&next); err == nil {
+		t.Fatal("Reload accepted a CRL signed by a CA that is not trusted")
+	}
+	if got := env.triggerStatus(client); got != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: a refused reload must change nothing", got)
 	}
 }

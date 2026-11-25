@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sync/atomic"
+	"time"
 )
 
 // Material is the part of the mTLS setup that can be replaced while the agent
@@ -16,12 +17,14 @@ import (
 type Material struct {
 	cert   tls.Certificate
 	caPool *x509.CertPool
+	// crl is nil when no revocation list is configured.
+	crl *revocationList
 }
 
-// LoadMaterial reads and validates the server certificate/key pair and the
-// internal CA bundle. Nothing is returned on any error, so a caller keeps
-// whatever it already had.
-func LoadMaterial(certFile, keyFile, caFile string) (*Material, error) {
+// LoadMaterial reads and validates the server certificate/key pair, the
+// internal CA bundle and, when crlFile is not empty, the revocation list.
+// Nothing is returned on any error, so a caller keeps whatever it already had.
+func LoadMaterial(certFile, keyFile, caFile, crlFile string) (*Material, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("loading server certificate/key: %w", err)
@@ -31,11 +34,22 @@ func LoadMaterial(certFile, keyFile, caFile string) (*Material, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading CA file: %w", err)
 	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caPEM) {
+	cas := parseCertificates(caPEM)
+	if len(cas) == 0 {
 		return nil, fmt.Errorf("no valid certificates found in CA file %q", caFile)
 	}
-	return &Material{cert: cert, caPool: pool}, nil
+	pool := x509.NewCertPool()
+	for _, ca := range cas {
+		pool.AddCert(ca)
+	}
+
+	m := &Material{cert: cert, caPool: pool}
+	if crlFile != "" {
+		if m.crl, err = loadRevocationList(crlFile, cas, time.Now()); err != nil {
+			return nil, err
+		}
+	}
+	return m, nil
 }
 
 // TLSState builds the agent's mTLS listener configuration and lets its
@@ -55,8 +69,8 @@ type TLSState struct {
 }
 
 // NewTLSState loads the initial material.
-func NewTLSState(certFile, keyFile, caFile string, allowAnonymousClients bool) (*TLSState, error) {
-	m, err := LoadMaterial(certFile, keyFile, caFile)
+func NewTLSState(certFile, keyFile, caFile, crlFile string, allowAnonymousClients bool) (*TLSState, error) {
+	m, err := LoadMaterial(certFile, keyFile, caFile, crlFile)
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +85,20 @@ func NewTLSState(certFile, keyFile, caFile string, allowAnonymousClients bool) (
 // (see Verify), so a removed CA takes effect for them immediately.
 func (s *TLSState) Replace(m *Material) { s.material.Store(m) }
 
-// CAPool returns the CA pool currently in force.
-func (s *TLSState) CAPool() *x509.CertPool { return s.material.Load().caPool }
+// Verify checks a client certificate chain against the CA and revocation list
+// currently in force and returns the identity it proves. It runs on every
+// request, so a revocation or a rotated CA applies to open connections too.
+func (s *TLSState) Verify(peerCerts []*x509.Certificate) (*Identity, error) {
+	m := s.material.Load()
+	id, err := Verify(peerCerts, m.caPool)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.crl.check(peerCerts[0], time.Now()); err != nil {
+		return nil, err
+	}
+	return id, nil
+}
 
 // Config returns the listener's tls.Config. Each handshake gets a copy that
 // carries the material current at that moment.
@@ -135,8 +161,9 @@ type Identity struct {
 // Verify validates the presented client certificate chain against caPool
 // and returns the resulting identity. It returns an error if no certificate
 // was presented, or if the presented certificate does not chain to a
-// trusted root — an expired, revoked-by-absence, or otherwise untrusted
-// certificate is always rejected regardless of which route was requested.
+// trusted root — an expired or otherwise untrusted certificate is always
+// rejected regardless of which route was requested. Revocation is not checked
+// here; TLSState.Verify adds it.
 func Verify(peerCerts []*x509.Certificate, caPool *x509.CertPool) (*Identity, error) {
 	if len(peerCerts) == 0 {
 		return nil, fmt.Errorf("no client certificate presented")

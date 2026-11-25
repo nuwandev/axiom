@@ -89,9 +89,10 @@ wildcard or implicit-allow path. Every rejection is written to the audit
 log (`audit.EventRejected`) with the identity and requested action.
 **Blast radius:** none beyond a visible rejected-request audit entry (useful
 for detecting a cert that should be revoked).
-**Residual risk:** Axiom performs no certificate revocation check (no
-CRL/OCSP) — a compromised-but-not-yet-revoked-by-CA certificate for an
-*already-authorized* identity is covered by scenario 3, not this one. If
+**Residual risk:** Axiom checks revocation only against an operator-supplied
+CRL (`security.mtls.crl_file`, off unless set; no OCSP). A compromised
+certificate for an *already-authorized* identity that the CA has not yet
+listed there is covered by scenario 3, not this one. If
 your CA supports short-lived certs, prefer that over long-lived ones for
 this reason.
 
@@ -198,11 +199,18 @@ paths reach action execution.
 
 An attacker who can observe (or has previously captured) a legitimate,
 successfully-authenticated request and resends it.
-**Analysis:** Axiom has no replay-prevention nonce/timestamp mechanism in
-v1. A replayed `POST /v1/actions/{action}` is, from Axiom's perspective,
+**Analysis:** Axiom has no replay-prevention nonce/timestamp mechanism. A
+replayed `POST /v1/actions/{action}` is, from Axiom's perspective,
 indistinguishable from the caller legitimately triggering the same action
 again — which is not inherently a security violation, since triggering
 that action is exactly what that identity is authorized to do.
+**Idempotency keys (client retries, not attackers):** a caller may send an
+`Idempotency-Key` header. Within `jobs.idempotency_window` (default 10
+minutes) the same identity, action and key returns the original job with
+`Idempotent-Replay: true` and starts nothing. This protects against a
+client retrying after a lost response; it does not stop an attacker, who
+can simply omit the header or choose a new key. Keys are held in memory and
+forgotten on restart, and at most 10,000 are held at once.
 **What actually limits this:** (a) TLS itself — a replayed request requires
 either a MITM position on an already-authenticated mTLS channel (out of
 scope; equivalent to compromising the channel itself) or a captured
@@ -213,7 +221,8 @@ not — is fully audited with identity, action, and parameters, so a
 suspicious repeat is visible after the fact.
 **Residual risk, honestly stated:** a shared-concurrency, idempotent-by-
 design action (e.g. `service.restart`) triggered twice in a row via replay
-is not detected as anomalous by Axiom itself. If a specific action is
+is not detected as anomalous by Axiom itself, unless the caller used an
+idempotency key. If a specific action is
 sensitive to duplicate execution, that action's *script* should be written
 idempotently (checking current state before acting) — the spec's action-
 result-validation guidance already recommends this regardless of replay
@@ -509,8 +518,11 @@ configure.
   how often one identity may trigger actions; past it the API answers `429`
   and creates no job. Rate-limited requests are not audited, so a flood cannot
   become synced audit writes.
-- **Not bounded by Axiom:** connections, TLS handshakes from anyone who can
-  reach the port, requests other than triggers (including requests from a
+- **Open connections:** `agent.listen.max_connections` (off by default) caps
+  how many are open at once, handshakes included; failed handshakes are
+  logged, not audited.
+- **Not bounded by Axiom:** the rate of new connections and TLS handshakes
+  from anyone who can reach the port, requests other than triggers (including requests from a
   certificate with no allowlisted identity, each of which writes an audit
   record), CPU, process count or file descriptors used
   by action scripts, and audit writes (each request writes and syncs a

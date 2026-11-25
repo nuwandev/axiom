@@ -36,7 +36,7 @@ type Server struct {
 // the same holder the listener uses, so per-request client-certificate
 // verification and the handshake can never disagree about which CA is current.
 func NewServer(cfg *config.Config, jobMgr *jobs.Manager, auditLogger *audit.Logger, logger *slog.Logger) (*Server, error) {
-	tlsState, err := auth.NewTLSState(cfg.CertFile, cfg.KeyFile, cfg.CAFile, cfg.HealthAllowAnonymous)
+	tlsState, err := auth.NewTLSState(cfg.CertFile, cfg.KeyFile, cfg.CAFile, cfg.CRLFile, cfg.HealthAllowAnonymous)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (s *Server) Reload(next *config.Config) error {
 		return fmt.Errorf("configuration changes need a restart, nothing was reloaded: %s", strings.Join(changed, ", "))
 	}
 
-	material, err := auth.LoadMaterial(next.CertFile, next.KeyFile, next.CAFile)
+	material, err := auth.LoadMaterial(next.CertFile, next.KeyFile, next.CAFile, next.CRLFile)
 	if err != nil {
 		return err
 	}
