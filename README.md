@@ -1,7 +1,7 @@
-# Axiom: mTLS Server Automation Agent
+# Axiom: mTLS Server Automation Agent, an SSH Alternative for CI/CD
 
-Axiom is a small server-side automation agent for Linux and Windows
-Server: a mutually-authenticated (mTLS) HTTPS API that lets a
+Axiom is a small, open source server-side automation agent for Linux and
+Windows Server: a mutually-authenticated (mTLS) HTTPS API that lets a
 trusted system — a CI/CD controller, an internal automation tool — trigger
 predefined, server-local actions as a safer alternative to giving it SSH
 access. You configure what each action does — deploy, rollback, restart,

@@ -35,3 +35,8 @@ Thumbs.db
 # Do NOT delete these files; they stay on disk for development use.
 /docs/SPEC.md
 /docs/decisions/
+
+# Generated documentation site (website/tools/prepare_docs.py)
+/website/docs/
+/website/site/
+/_site/

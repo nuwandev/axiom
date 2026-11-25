@@ -298,9 +298,7 @@ E.g. a deploy script pulls a new image successfully but the service fails
 its own health check before the script exits.
 **Analysis:** this is explicitly the action script's responsibility to
 detect and report, not Axiom's — Axiom only observes the script's exit
-code (and timeout/output). The spec's guidance (see
-[`scripts/examples/your-deploy.sh.sample`](../scripts/examples/your-deploy.sh.sample))
-is for the script itself to wait for and verify real application health
+code (and timeout/output). The guidance is for the script itself to wait for and verify real application health
 before exiting `0`, so "launched but broken" correctly surfaces to the
 caller as a failed job rather than a false success.
 **What Axiom guarantees regardless:** the job's terminal state

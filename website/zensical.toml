@@ -1,0 +1,73 @@
+# Axiom documentation site: Zensical project.
+#
+# Build from the repository root (see website/README.md):
+#   python website/tools/prepare_docs.py
+#   cd website && zensical build -f zensical.toml
+
+[project]
+site_name = "Axiom"
+site_description = "Axiom is an open source mTLS automation agent for Linux and Windows servers: trigger predefined deploy actions from CI/CD without SSH."
+site_author = "Theekshana Nuwan"
+site_url = "https://nuwandev.github.io/axiom-mtls-agent/"
+repo_url = "https://github.com/nuwandev/axiom-mtls-agent"
+repo_name = "nuwandev/axiom-mtls-agent"
+docs_dir = "docs"
+site_dir = "site"
+nav = [
+  { "Overview" = "index.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Install" = [
+    { "Linux" = "install-linux.md" },
+    { "Windows" = "install-windows.md" },
+    { "Verify downloads" = "verifying-downloads.md" },
+  ] },
+  { "Reference" = [
+    { "Configuration" = "configuration.md" },
+    { "Actions" = "actions.md" },
+    { "Certificates" = "certificates.md" },
+    { "Jenkins and CI/CD" = "jenkins-integration.md" },
+    { "Postman" = "postman-testing.md" },
+  ] },
+  { "Security" = [
+    { "Security model" = "security.md" },
+    { "Threat model" = "threat-model.md" },
+    { "Windows security" = "windows-security.md" },
+  ] },
+  { "Validation" = [
+    { "Audit path" = "audit-validation.md" },
+    { "Windows Server 2022" = "windows-server-2022-validation.md" },
+  ] },
+  { "Development" = "development.md" },
+  { "Architecture presentation" = "https://nuwandev.github.io/axiom-mtls-agent/architecture/" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.copy",
+  "navigation.sections",
+  "navigation.top",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+tables = {}
+toc.permalink = true
+toc.toc_depth = "2-3"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.inlinehilite = {}
+pymdownx.superfences = {}
