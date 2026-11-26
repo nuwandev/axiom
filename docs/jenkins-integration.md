@@ -197,7 +197,10 @@ webhook/callback mechanism and none is planned (see the project's
   `404` on job lookup — the job ID is wrong, the job belongs to a different
   client identity (status and logs are readable only by the certificate that
   triggered the job, so poll with the same credential), or Axiom has
-  restarted since the job ran (see [job history and restarts](#job_id-and-what-a-lost-connection-means) below).
+  restarted since the job ran and `jobs.state_path` is not set (see [job history and restarts](#job_id-and-what-a-lost-connection-means) below).
+  With `jobs.state_path` set, a job from before a restart still answers, but
+  its `/logs` return `410` (output is never kept), and a job that was running
+  at the restart is `cancelled` with an "interrupted: agent restarted" error.
 - `429` — the agent-wide limit of running jobs (`jobs.max_concurrent`) is
   reached and no job was created. Wait for `Retry-After` and retry; unlike a
   lost trigger response, this is safe to retry.
@@ -242,9 +245,10 @@ Rules to design the pipeline around:
 - A request that is refused (`409` busy, `429`, `400` invalid parameter) does
   not use up the key; retry it with the same key.
 - A replay is not charged to your trigger rate limit or the job cap.
-- Keys are remembered for `jobs.idempotency_window` (default 10 minutes), in
-  memory only. After that window, or after an Axiom restart, the same key
-  starts a new job. If the job's record has aged out of the job history while
+- Keys are remembered for `jobs.idempotency_window` (default 10 minutes). By
+  default they are in memory only, so after an Axiom restart the same key starts
+  a new job; with `jobs.state_path` set they survive a restart. After the window
+  the same key always starts a new job. If the job's record has aged out of the job history while
   the key is still valid, the retry is a `409` that names the job, not a new
   run.
 

@@ -9,6 +9,23 @@ backward-compatible additions bump minor; fixes bump patch.
 ## [Unreleased]
 
 ### Added
+- **Job state across restarts (opt-in).** `jobs.state_path` names an
+  append-only file that keeps each job's status, exit code, error and times,
+  and idempotency keys, so they survive a restart. Off by default, so an
+  upgrade changes nothing. Script output and parameter values are never
+  written. After a restart the newest `jobs.max_history` jobs answer
+  `GET /v1/jobs/{id}` for the identity that ran them; their `/logs` answer
+  `410 Gone`; a job that was queued or running comes back `cancelled` with the
+  error `interrupted: agent restarted before this job's result was recorded`
+  and no duration; and a retry with a saved `Idempotency-Key` returns the
+  original job instead of running the action again. The file is mode `0600`,
+  its directory is checked like the audit log's, compaction is atomic, a
+  half-written last line is dropped and any other damaged line stops Axiom
+  from starting. A write failure is logged and does not fail the job. It is
+  not a record of truth: the service account can write it and the audit log
+  remains the durable record. Verified on Linux, including a `kill -9` in the
+  middle of a job; on Windows the store logic is unit-tested but the restart
+  behaviour has not yet been run on a Windows host.
 - **Idempotency keys for triggers.** `POST /v1/actions/{action}` accepts an
   optional `Idempotency-Key` header (1-128 characters from `A-Za-z0-9._:-`).
   Within `jobs.idempotency_window` (1s-24h, default 10m) the same identity,
@@ -17,8 +34,9 @@ backward-compatible additions bump minor; fixes bump patch.
   so a client can retry after a lost response without running a shared action
   twice. The same key with different parameters is `422`; a malformed or
   repeated header is `400`; a refused request does not use up its key; a
-  replay is not charged to the rate limit or job cap. Keys are in memory only
-  (forgotten on restart) and at most 10,000 are held, past which new keys get
+  replay is not charged to the rate limit or job cap. Keys are in memory
+  (forgotten on restart unless `jobs.state_path` is set) and at most 10,000 are
+  held, past which new keys get
   `429`. This protects against a client's own retries, not an attacker, who can
   omit the header. Requests without the header behave as before.
 - **Certificate revocation list.** Optional `security.mtls.crl_file` (PEM or

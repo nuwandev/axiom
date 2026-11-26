@@ -245,7 +245,7 @@ Implementation notes
 - **Fail before listening.** `config.Load` validates the whole file, then checks ownership and permissions of the config, CA, certificate, key, every script and each ancestor directory. A problem aborts startup.
 - **The request cannot name what runs.** `executor.Spec` carries a script path, an environment, a timeout and an output cap. There is no field for an executable, an argument or inline source.
 - **Audit is part of admission.** The job manager holds the audit logger and will not create or start a job without writing its record.
-- **State is small and local.** Runtime state is the in-memory job store, guarded by explicit locks taken in a consistent order, and the audit file.
+- **State is small and local.** Runtime state is the in-memory job store, guarded by explicit locks taken in a consistent order, and the audit file. An optional state file keeps job status and idempotency keys across restarts; it never holds output or parameter values.
 
 ## 6. Request lifecycle {#lifecycle}
 
@@ -295,7 +295,7 @@ Implementation notes
 <div class="ax-mmd">
 --8<-- "mermaid/states.svg"
 </div>
-<figcaption>Figure 7. Job states. A job is created in memory only after capacity is reserved, and leaves memory when history is trimmed or the agent restarts.</figcaption>
+<figcaption>Figure 7. Job states. A job is created in memory only after capacity is reserved, and leaves memory when history is trimmed or the agent restarts. With <code>jobs.state_path</code> set, a job's status (not its output) is restored after a restart, and a job that was in flight comes back cancelled.</figcaption>
 </figure>
 
 <figure class="ax-fig ax-fig-tight" id="fig-admission" markdown>
@@ -319,7 +319,7 @@ Output and ownership
 :   Stdout and stderr are captured into capped in-memory buffers, truncated beyond the limit without throttling the process, and returned only to the identity that triggered the job. Output is never written to the audit trail.
 
 Memory, not storage
-:   Job state is not persisted. A restart, a crash or a host reboot clears it, and a caller polling an old job id receives 404. The audit log is the durable record of what ran.
+:   Job state is not persisted unless <code>jobs.state_path</code> is set. By default a restart, a crash or a host reboot clears it, and a caller polling an old job id receives 404. With the state file, status survives, output never does (its logs answer 410), and a job that was running at the restart comes back cancelled. The audit log is the durable record of what ran either way.
 
 ## 9. Audit architecture {#audit}
 
@@ -363,7 +363,7 @@ The external API, configuration schema, authentication and authorization are ide
 | Network to listener | Mutual TLS, one trust root | `auth.TLSState` | Revocation only through an operator-supplied CRL; only triggers can be rate limited, connections only capped |
 | Identity to action | Default-deny allowlist keyed by CN | `Identity.IsAllowed`, `handleTriggerAction` | Changes need a reload (`SIGHUP`) or restart; CN issuance is the CA's job |
 | Request to job manager | Schema, size, regex and parameter validation | `handlers.go`, `config.Parameter` | A script can still mishandle a validated value |
-| Job visibility | Owner-only status and logs | `ownedJob` | State is in memory only |
+| Job visibility | Owner-only status and logs | `ownedJob` | State is in memory unless `jobs.state_path` is set, and output never survives a restart |
 | Axiom to script | No shell, fixed invocation, constructed environment, timeout, output cap, containment | `executor`, `jobs.buildEnv` | Axiom does not constrain what a script does |
 | Service account to its own files | Startup integrity checks, systemd or NTFS sandbox | `config/script_security_*`, `winsec`, `axiom.service` | Docker group access is root-equivalent; the Windows account holds `SeImpersonatePrivilege` |
 | Axiom to audit | Fail-closed accepted and started, fsync | `audit.Logger.Write` | Local file alterable; finished record best effort; Windows event-log entries are forgeable by the service account |
@@ -381,7 +381,7 @@ The external API, configuration schema, authentication and authorization are ide
 | Script exceeds its timeout | Tree terminated, job failed with the timeout reason | `executor.Run` |
 | Panic in a job goroutine | Recovered, job failed, finished record written | `Manager.run` |
 | Graceful stop | New triggers get 503, HTTP drains up to 30 s, running jobs are cancelled and recorded as interrupted | `serve`, `Manager.Shutdown` |
-| Crash, SIGKILL or power loss | No finished record, job state lost; the child is killed by Pdeathsig or the Job Object | `executor` containment |
+| Crash, SIGKILL or power loss | No finished record. The job's state is lost, or with `jobs.state_path` it returns cancelled as interrupted. The child is killed by Pdeathsig or the Job Object | `executor` containment, `Manager.EnableState` |
 | Trigger response lost | With an `Idempotency-Key`: the retry returns the original job and starts nothing. Without one: an exclusive action answers 409, a shared action may run twice | `Manager.TriggerIdempotent`, `docs/jenkins-integration.md` |
 | Certificate or identity change | Applied by a reload, without cancelling jobs; a failed or restart-only reload changes nothing and is logged | `docs/certificates.md` |
 
@@ -392,7 +392,7 @@ The external API, configuration schema, authentication and authorization are ide
 <div><b>Rate limit connections</b><span>Triggers can be limited per identity (<code>jobs.max_triggers_per_minute</code>) and open connections capped (<code>agent.listen.max_connections</code>); both are off by default. The rate of new connections, TLS handshakes and other requests is not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, cmd/axiom/limitlistener.go, docs/THREAT-MODEL.md</em></span></div>
 <div><b>Stop an attacker replaying a request</b><span>A replayed request is indistinguishable from a repeated trigger. An optional <code>Idempotency-Key</code> makes a client's own retries safe, but an attacker can omit it. Exclusive actions answer 409 while running; shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
 <div><b>Reload everything live</b><span>Only identities, the certificate files and the CRL reload (<code>SIGHUP</code> on Linux, <code>paramchange</code> on Windows). Actions, listen address, limits and audit settings are read once; a reload that touches them is refused and a restart, which cancels running jobs, is required. Every reload is audited with the identities it added, removed or changed.<em>docs/certificates.md, internal/config/reload.go</em></span></div>
-<div><b>Persist job state</b><span>Status and logs vanish on restart or crash. The audit log is the durable record.<em>internal/jobs/manager.go</em></span></div>
+<div><b>Persist job output</b><span>Output is never written to disk, so logs vanish on restart or crash. Job status survives only if <code>jobs.state_path</code> is set (off by default), in a file the service account can also write. The audit log is the durable record.<em>internal/jobs/persist.go, docs/INSTALL.md section 11</em></span></div>
 <div><b>Make Windows event-log entries tamper-proof</b><span>The Windows Event Log sink exists since v2.1.0, but its entries carry no sender attribute a script cannot also set, and the sink has not yet been run on a Windows Server host. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
 <div><b>Audit failed TLS handshakes</b><span>Handshake rejections never reach the audit log, deliberately: an unauthenticated peer must not cause a synced audit write per attempt. They are logged at <code>WARN</code> by the structured service log.<em>cmd/axiom/main.go, ErrorLog</em></span></div>
 <div><b>Restrict what a script does</b><span>Scripts may use the network and any resource the service account can reach. Axiom controls how a script is invoked, not its behaviour.<em>packaging/axiom.service, RestrictAddressFamilies</em></span></div>

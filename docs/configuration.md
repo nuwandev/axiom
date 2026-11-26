@@ -133,6 +133,9 @@ jobs:
                         # evicted once exceeded, a running job never is
   max_triggers_per_minute: 0   # optional, default 0 = no limit (0-10000);
                                 # per identity, see below
+  idempotency_window: 10m      # optional, default 10m (1s-24h), see below
+  # state_path: /var/lib/axiom/jobs.state   # optional: keep job status and
+                                # idempotency keys across restarts, see below
 ```
 
 At `jobs.max_concurrent` a trigger returns `429` with `Retry-After` and
@@ -158,9 +161,25 @@ highest rate a legitimate pipeline needs.
 long an `Idempotency-Key` sent with a trigger is remembered. Within it, the same
 identity, action and key returns the original job and starts nothing; see
 [`jenkins-integration.md`](jenkins-integration.md#job_id-and-what-a-lost-connection-means)
-for the client rules. Keys live in memory (lost on restart), at most 10,000 are
-held at once, and past that new keys get `429` while existing ones keep working.
-Requests without the header are unaffected. It is restart-only.
+for the client rules. Keys are lost on restart unless `jobs.state_path` is set
+(below), at most 10,000 are held at once, and past that new keys get `429` while
+existing ones keep working. Requests without the header are unaffected. It is
+restart-only.
+
+**Job state across restarts.** `jobs.state_path` is an absolute path to a file
+that keeps each job's status, exit code, error and times, plus idempotency keys,
+so they survive a restart. It is off by default, so an upgrade changes nothing.
+The directory must not be writable by anyone but the service account and root
+(the same rule as `audit.path`), and the file cannot be the audit log.
+Script output and parameter values are never written to it. After a restart the
+newest `jobs.max_history` jobs answer `GET /v1/jobs/{id}` with their recorded
+status; their `/logs` answer `410 Gone`; and a job that was queued or running
+at the time comes back `cancelled` with no duration. Write failures are logged
+and do not fail the job. The file is not a record of truth (the audit log is),
+and a damaged file, other than a half-written last line, stops Axiom from
+starting. See [`INSTALL.md` §11](INSTALL.md#11-job-history-and-restart-behavior).
+It is restart-only. On Windows use a path in the service's writable data
+directory, for example `C:\ProgramData\Axiom\logs\jobs.state`.
 
 **Memory bound.** Finished jobs keep their captured output in memory until
 evicted. The worst case is roughly
@@ -175,9 +194,10 @@ handshakes or requests other than triggers, so keep it behind your network
 controls, and add systemd limits (`MemoryMax`, `TasksMax`, `LimitNOFILE`) in
 the unit for resource containment of the whole process tree.
 
-Job history is in-memory only and does not survive a restart — the audit
-log (`audit.path`, default `/var/log/axiom/audit.log`) is the durable
-execution record. See [`operations`](INSTALL.md#11-job-history-and-restart-behavior).
+Job history is in memory only and does not survive a restart unless
+`jobs.state_path` is set, and even then output does not. The audit log
+(`audit.path`, default `/var/log/axiom/audit.log`) is the durable execution
+record. See [`operations`](INSTALL.md#11-job-history-and-restart-behavior).
 
 ## Audit log
 

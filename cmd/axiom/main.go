@@ -63,6 +63,18 @@ func serveWithReload(ctx context.Context, cfg *config.Config, logger *slog.Logge
 	defer auditLogger.Close()
 
 	jobMgr := jobs.NewManager(cfg, auditLogger, logger)
+	if cfg.JobStatePath != "" {
+		if err := jobMgr.EnableState(cfg.JobStatePath); err != nil {
+			return fmt.Errorf("enabling job state: %w", err)
+		}
+		// Registered before the shutdown defer below, so it runs after the
+		// jobs have written their final records.
+		defer func() {
+			if err := jobMgr.CloseState(); err != nil {
+				logger.Error("closing job state file failed", "error", err)
+			}
+		}()
+	}
 	// Runs before auditLogger.Close (defers are LIFO): in-flight jobs are
 	// stopped and their "finished" (interrupted) records written while the
 	// audit log is still open. A crash or SIGKILL skips this entirely.

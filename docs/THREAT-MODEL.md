@@ -210,7 +210,8 @@ minutes) the same identity, action and key returns the original job with
 `Idempotent-Replay: true` and starts nothing. This protects against a
 client retrying after a lost response; it does not stop an attacker, who
 can simply omit the header or choose a new key. Keys are held in memory and
-forgotten on restart, and at most 10,000 are held at once.
+forgotten on restart unless `jobs.state_path` is set, and at most 10,000 are
+held at once.
 **What actually limits this:** (a) TLS itself — a replayed request requires
 either a MITM position on an already-authenticated mTLS channel (out of
 scope; equivalent to compromising the channel itself) or a captured
@@ -345,9 +346,11 @@ deliberately not built: real action scripts here wrap CLI tools
 (docker/kubectl/systemctl/pm2) that don't self-daemonize that way, so the
 added architectural complexity (cgroup creation/delegation/ownership for an
 unprivileged service account) wasn't justified by the actual risk. The
-in-memory job record for an in-flight job is still lost on restart (§11 of
-the install guide) — a caller polling `GET /v1/jobs/{id}` afterward gets
-`404`, not stale state.
+in-memory job record for an in-flight job is lost on restart (§11 of the
+install guide) unless `jobs.state_path` is set. Without it, a caller polling
+`GET /v1/jobs/{id}` afterward gets `404`, not stale state. With it, the job
+comes back `cancelled` with an explicit "interrupted: agent restarted" error
+and no duration, rather than as a job that appears to be still running.
 **What's durable regardless:** the audit log already has the `accepted` and
 `started` records for that job (both written synchronously before/at
 execution start) — an operator can see from the audit trail that a job was

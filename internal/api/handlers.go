@@ -291,6 +291,13 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if s.jobs.Restored(snap.ID) {
+		// The status survived a restart, the output did not: it was never
+		// written to disk. 410 says the logs existed and are gone, which a
+		// 404 ("no such job") would not.
+		writeError(w, http.StatusGone, "output is not retained across an agent restart")
+		return
+	}
 	stdout, stderr, stdoutTrunc, stderrTrunc, ok := s.jobs.Logs(snap.ID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "job not found")

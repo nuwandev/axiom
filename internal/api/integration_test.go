@@ -64,6 +64,9 @@ type testEnvOptions struct {
 	// paramAction adds "param.action" (one required "tag" parameter), allowed
 	// for ci-jenkins.
 	paramAction bool
+	// restoredJobID, when set, starts the job manager on a state file that
+	// already holds this finished job (owned by ci-jenkins), as after a restart.
+	restoredJobID string
 }
 
 func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
@@ -158,6 +161,15 @@ authorization:
 	t.Cleanup(func() { auditLogger.Close() })
 
 	jobMgr := jobs.NewManager(cfg, auditLogger, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if opts.restoredJobID != "" {
+		record := fmt.Sprintf(`{"type":"job","id":%q,"action":"sample.action","requested_by":"ci-jenkins","status":"succeeded",`+
+			`"created_at":"2026-11-01T12:00:00Z","started_at":"2026-11-01T12:00:01Z","finished_at":"2026-11-01T12:00:02Z","expires":"0001-01-01T00:00:00Z"}`+"\n", opts.restoredJobID)
+		statePath := writeFile(t, dir, "jobs.state", []byte(record), 0o600)
+		if err := jobMgr.EnableState(statePath); err != nil {
+			t.Fatalf("EnableState: %v", err)
+		}
+		t.Cleanup(func() { jobMgr.CloseState() })
+	}
 
 	srv, err := NewServer(cfg, jobMgr, auditLogger, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err != nil {

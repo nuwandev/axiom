@@ -302,8 +302,8 @@ curl --cacert ca.crt --cert client.crt --key client.key \
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/actions/{action}` | Trigger a configured action. Optional JSON body: `{"parameters": {...}}`. Returns `202` + `{job_id, status}`, or `400`/`403`/`404`/`409`/`429` on rejection (`429`: the agent-wide job limit is reached). |
-| `GET` | `/v1/jobs/{job_id}` | Job status/result. Visible only to the identity that triggered the job; `404` if unknown, owned by another identity, or the agent has since restarted. |
-| `GET` | `/v1/jobs/{job_id}/logs` | Captured, size-bounded stdout/stderr. Same owner-only visibility as the job itself. |
+| `GET` | `/v1/jobs/{job_id}` | Job status/result. Visible only to the identity that triggered the job; `404` if unknown, owned by another identity, or the agent has since restarted (unless `jobs.state_path` keeps job status across restarts). |
+| `GET` | `/v1/jobs/{job_id}/logs` | Captured, size-bounded stdout/stderr. Same owner-only visibility as the job itself. `410` for a job from before a restart, whose output is never kept. |
 | `GET` | `/health` | Agent health. Authenticated by default (a client certificate is required at the TLS handshake); anonymous access is an explicit opt-in per agent. |
 
 That is the complete API. There is no endpoint that accepts an arbitrary

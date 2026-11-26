@@ -77,8 +77,9 @@ found during real-host validation to break tools an action script may
 reasonably invoke regardless of container engine choice (e.g. the `docker`
 CLI's `~/.docker/config.json` for private registry credentials, or a
 rootless container engine's runtime-state resolution). Axiom's own job
-history is still in-memory only and does not use this directory (see §11)
-— it exists purely as a stable, writable `$HOME` for child processes.
+history is in memory unless you set `jobs.state_path`, which can point into
+this directory (see §11). Otherwise it exists purely as a stable, writable
+`$HOME` for child processes.
 
 ---
 
@@ -275,7 +276,7 @@ Key fields, see the example file for the full annotated reference:
 - `audit.path` — defaults to `/var/log/axiom/audit.log`.
 - `output.max_bytes` — per-stream captured-output cap, default 2 MiB.
 - `jobs.max_history` — in-memory job count retained for polling, default
-  1000 (see §11 — this is not durable storage).
+  1000. Not durable unless `jobs.state_path` is set (see §11).
 - `jobs.max_concurrent` — cap on queued+running jobs across all actions,
   default 16; over it a trigger gets `429` and creates no job.
 - `actions.<name>` — one entry per action this agent exposes: `command`
@@ -480,21 +481,49 @@ route answers `401`.
 
 ## 11. Job history and restart behavior
 
-The job list (`GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/logs`) is **in-memory
-only**. Restarting the Axiom process — for an upgrade, a crash, a host
+The job list (`GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/logs`) is **in memory
+by default**. Restarting the Axiom process — for an upgrade, a crash, a host
 reboot, anything — clears it completely; any job IDs a caller was polling
 before the restart become unknown afterward.
+
+**Optional: keep job status across restarts.** Set `jobs.state_path` (for
+example `/var/lib/axiom/jobs.state`, a directory the service account owns and
+nobody else can write to) and Axiom keeps an append-only file of job status
+and idempotency keys. After a restart:
+
+- `GET /v1/jobs/{id}` still answers for the newest `jobs.max_history` jobs,
+  with their status, exit code, error and times, to the identity that ran them.
+- `GET /v1/jobs/{id}/logs` answers `410 Gone` for those jobs. **Script output
+  and parameter values are never written to the file**, so output does not
+  survive a restart.
+- A job that was queued or running when the agent stopped comes back as
+  `cancelled` with the error `interrupted: agent restarted before this job's
+  result was recorded`, and no duration. Its script may have finished or been
+  killed with the agent; the audit log is where to look. A graceful stop
+  already records jobs as interrupted; this covers a crash, `SIGKILL` or power
+  loss.
+- Idempotency keys survive too, so a retry after the restart returns the
+  original job instead of running the action again.
+
+The file is created with mode `0600`, replaced atomically when it is compacted
+(at start-up, and once it holds ten times `jobs.max_history` lines), and
+checked at start-up: a half-written last line, which is what a crash during a
+write leaves, is dropped, but any other damaged line stops Axiom from starting
+rather than silently losing history. A write failure is logged
+(`persisting job state failed`) and does not fail the job. The file is a
+convenience, not a record of truth: the service account that runs your scripts
+can also write it, and a job whose write failed is simply missing after a
+restart. It is restart-only configuration.
 
 **The audit log is the durable execution record.** Every accepted,
 started, finished (success/failure/timeout/cancelled), and rejected request
 is written there synchronously, and it survives process restarts. If a
 caller needs to know what happened to a job across a restart boundary, that
-answer lives in `/var/log/axiom/audit.log`, not in the job API.
+answer lives in `/var/log/axiom/audit.log`, whether or not `jobs.state_path`
+is set.
 
-This is a deliberate v1 scope decision — Axiom does not use a database to
-persist job history. Given the durable audit trail already covers the
-same information, adding one to make in-flight polling restart-durable
-was judged not worth the added component.
+Without `jobs.state_path`, Axiom uses no database and persists no job history:
+the durable audit trail already covers the same information.
 
 ---
 
@@ -600,7 +629,7 @@ kept on disk by Axiom itself.
 | `404` on `POST /v1/actions/{name}` | Action name doesn't exist in config, or path had disallowed characters | Check `actions:` in config |
 | `409` on a trigger | That action is `concurrency: exclusive` and already running | `GET /v1/jobs/{id}` on the in-flight job, or check the audit log |
 | Job stuck in `running` past its expected duration | Should self-resolve at `timeout` — Axiom kills the full process tree, not just the direct child | If it doesn't resolve, that's a bug — check `journalctl` for executor errors |
-| `GET /v1/jobs/{id}` returns 404 for a job you triggered earlier | Axiom restarted since (§11), or the job was evicted from the bounded in-memory history (`jobs.max_history`) | Check `/var/log/axiom/audit.log` for the durable record |
+| `GET /v1/jobs/{id}` returns 404 for a job you triggered earlier | Axiom restarted since and `jobs.state_path` is not set (§11), or the job was evicted from the bounded history (`jobs.max_history`) | Check `/var/log/axiom/audit.log` for the durable record |
 | Action script fails but you can't see why | Fetch its captured output | `GET /v1/jobs/{id}/logs` |
 
 ---

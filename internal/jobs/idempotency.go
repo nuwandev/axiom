@@ -118,7 +118,9 @@ func (m *Manager) TriggerIdempotent(ctx context.Context, actionName, identity, k
 	if err != nil {
 		return "", false, err
 	}
-	s.entries[k] = idempotencyEntry{paramsHash: hash, jobID: job.ID, expires: now.Add(s.window)}
+	entry := idempotencyEntry{paramsHash: hash, jobID: job.ID, expires: now.Add(s.window)}
+	s.entries[k] = entry
+	m.persistKey(k, entry)
 	return job.ID, false, nil
 }
 

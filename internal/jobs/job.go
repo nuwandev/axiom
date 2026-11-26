@@ -52,6 +52,14 @@ type Job struct {
 	stderrTrunc bool
 
 	cancel func()
+
+	// restored is set on a job loaded from the state file after a restart: it
+	// has a status but no retained output.
+	restored bool
+	// interrupted marks a restored job that was still queued or running when
+	// the agent stopped. Its end time is when the restarted agent noticed, not
+	// when the script ended, so no duration is reported for it.
+	interrupted bool
 }
 
 // Snapshot is an immutable, race-safe read of a job's current state.
@@ -84,7 +92,7 @@ func (j *Job) Snapshot() Snapshot {
 		StartedAt:   j.StartedAt,
 		FinishedAt:  j.FinishedAt,
 	}
-	if !s.StartedAt.IsZero() {
+	if !s.StartedAt.IsZero() && !j.interrupted {
 		end := s.FinishedAt
 		if end.IsZero() {
 			end = time.Now()

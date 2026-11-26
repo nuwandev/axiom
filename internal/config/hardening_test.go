@@ -3,6 +3,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,55 @@ func TestLoad_CRLFile(t *testing.T) {
 		}))
 		if err == nil || !strings.Contains(err.Error(), "crl_file") {
 			t.Fatalf("err = %v, want one naming crl_file", err)
+		}
+	})
+}
+
+func TestLoad_JobStatePath(t *testing.T) {
+	t.Run("unset means job state is not persisted", func(t *testing.T) {
+		cfg, err := loadWith(t, func(y, _ string) string { return y })
+		if err != nil || cfg.JobStatePath != "" {
+			t.Fatalf("err = %v, JobStatePath = %q", err, cfg.JobStatePath)
+		}
+	})
+	t.Run("an absolute path in a private directory is accepted", func(t *testing.T) {
+		var want string
+		cfg, err := loadWith(t, func(y, dir string) string {
+			want = dir + "/jobs.state"
+			return y + "\njobs:\n  state_path: " + want + "\n"
+		})
+		if err != nil || cfg.JobStatePath != want {
+			t.Fatalf("err = %v, JobStatePath = %q, want %q", err, cfg.JobStatePath, want)
+		}
+	})
+	t.Run("a relative path is refused", func(t *testing.T) {
+		_, err := loadWith(t, func(y, _ string) string { return y + "\njobs:\n  state_path: jobs.state\n" })
+		if err == nil || !strings.Contains(err.Error(), "state_path") {
+			t.Fatalf("err = %v, want one naming state_path", err)
+		}
+	})
+	t.Run("the audit log cannot double as the state file", func(t *testing.T) {
+		_, err := loadWith(t, func(y, dir string) string {
+			p := dir + "/audit.log"
+			return y + "\naudit:\n  path: " + p + "\njobs:\n  state_path: " + p + "\n"
+		})
+		if err == nil || !strings.Contains(err.Error(), "audit log") {
+			t.Fatalf("err = %v, want a refusal naming the audit log", err)
+		}
+	})
+	t.Run("a world-writable directory is refused", func(t *testing.T) {
+		_, err := loadWith(t, func(y, dir string) string {
+			open := dir + "/open"
+			if err := os.Mkdir(open, 0o777); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(open, 0o777); err != nil {
+				t.Fatal(err)
+			}
+			return y + "\njobs:\n  state_path: " + open + "/jobs.state\n"
+		})
+		if err == nil || !strings.Contains(err.Error(), "state_path") {
+			t.Fatalf("err = %v, want one naming state_path", err)
 		}
 	})
 }

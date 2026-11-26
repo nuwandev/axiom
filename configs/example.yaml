@@ -37,9 +37,13 @@ jobs:
   max_concurrent: 16   # agent-wide cap on queued+running jobs (all actions);
                        # over the cap a trigger gets 429 and creates no job.
   max_history: 1000    # in-memory job count kept for GET /v1/jobs/{id}; oldest
-                        # finished job is evicted once this is exceeded. This is
-                        # not a durable store — job history is lost on restart.
-                        # The audit log is the durable execution record.
+                        # finished job is evicted once this is exceeded. In memory
+                        # unless state_path is set; output is never kept across a
+                        # restart. The audit log is the durable execution record.
+  # state_path: /var/lib/axiom/jobs.state   # optional: keep job status and
+  #                               # idempotency keys across restarts (never output
+  #                               # or parameter values). Directory must be owned
+  #                               # by the service account. See docs/INSTALL.md s11.
   # max_triggers_per_minute: 60   # optional, off (0) by default: most triggers one
   #                               # identity may make per minute; over it a trigger
   #                               # gets 429 with Retry-After and creates no job.

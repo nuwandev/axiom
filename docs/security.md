@@ -56,8 +56,11 @@ could be toggled.
   and cannot see into it, which is a deliberate boundary (see
   [`actions.md`](actions.md)). Keep scripts root-owned and reviewed, and give
   each one only the access it needs.
-- **Job history is in memory.** Job status and logs are not kept across a
-  restart; the audit log is the durable record (see
+- **Job history is in memory by default.** Job status and logs are not kept
+  across a restart; the audit log is the durable record. `jobs.state_path`
+  optionally keeps job status (never output or parameter values) across a
+  restart, in a file the service account can also write, so it is a
+  convenience and not evidence (see
   [`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior)).
 - **Replay.** Requests have no nonce or timestamp; mTLS channel security,
   exclusive-concurrency locking and full audit visibility cover this (see

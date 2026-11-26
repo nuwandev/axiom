@@ -229,6 +229,9 @@ type jobsConfig struct {
 	MaxTriggersPerMinute int `yaml:"max_triggers_per_minute"`
 	// IdempotencyWindow is how long an Idempotency-Key is remembered.
 	IdempotencyWindow time.Duration `yaml:"idempotency_window"`
+	// StatePath is an optional file that keeps job status and idempotency
+	// keys across restarts. Empty means they are held in memory only.
+	StatePath string `yaml:"state_path"`
 }
 
 // rawConfig mirrors the on-disk YAML shape before post-load processing.
@@ -286,6 +289,8 @@ type Config struct {
 	// IdempotencyWindow is how long an Idempotency-Key is remembered; never
 	// zero after Load.
 	IdempotencyWindow time.Duration
+	// JobStatePath is empty when job state is not persisted.
+	JobStatePath string
 }
 
 // Load reads, parses, and strictly validates the configuration at path.
@@ -325,6 +330,7 @@ func Load(path string) (*Config, error) {
 		MaxConcurrentJobs:      raw.Jobs.MaxConcurrent,
 		MaxTriggersPerMinute:   raw.Jobs.MaxTriggersPerMinute,
 		IdempotencyWindow:      raw.Jobs.IdempotencyWindow,
+		JobStatePath:           raw.Jobs.StatePath,
 	}
 	if cfg.IdempotencyWindow == 0 {
 		cfg.IdempotencyWindow = DefaultIdempotencyWindow
@@ -418,6 +424,20 @@ func (c *Config) validate() error {
 	// service ownership is accepted here; group/world-writable is not.
 	if err := requireSecureParentDir(c.AuditLogPath, true); err != nil {
 		return fmt.Errorf("audit.path: %w", err)
+	}
+	if c.JobStatePath != "" {
+		if !filepath.IsAbs(c.JobStatePath) {
+			return fmt.Errorf("jobs.state_path must be an absolute path, got %q", c.JobStatePath)
+		}
+		if c.JobStatePath == c.AuditLogPath {
+			return fmt.Errorf("jobs.state_path must not be the audit log")
+		}
+		// Like the audit log, the state file lives where the service account
+		// legitimately owns the directory, so service ownership is accepted
+		// there; group/world-writable is not.
+		if err := requireSecureParentDir(c.JobStatePath, true); err != nil {
+			return fmt.Errorf("jobs.state_path: %w", err)
+		}
 	}
 	if c.AuditSyslog && !syslogSupported {
 		return fmt.Errorf("audit.syslog is not supported on this platform")
