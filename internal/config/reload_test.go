@@ -40,6 +40,18 @@ func TestNonReloadableChanges(t *testing.T) {
 			c.Actions["x"].Parameters = map[string]Parameter{"p": {Type: ParameterTypeString, Pattern: ".*", Required: true}}
 		}, []string{"Actions"}},
 		{"action added", func(c *Config) { c.Actions["y"] = &Action{Command: "/bin/y"} }, []string{"Actions"}},
+		{"action timeout", func(c *Config) { c.Actions["x"].Timeout = time.Minute }, []string{"Actions"}},
+		{"action concurrency", func(c *Config) { c.Actions["x"].Concurrency = ConcurrencyExclusive }, []string{"Actions"}},
+		{"parameter required", func(c *Config) {
+			c.Actions["x"].Parameters = map[string]Parameter{"p": {Type: ParameterTypeString, Pattern: "[a-z]+"}}
+		}, []string{"Actions"}},
+		{"compiled pattern alone is not a change", func(c *Config) {
+			p := c.Actions["x"].Parameters["p"]
+			if err := p.Validate("p"); err != nil {
+				t.Fatal(err)
+			}
+			c.Actions["x"].Parameters["p"] = p
+		}, nil},
 		{"several", func(c *Config) { c.ListenPort = 9; c.AgentID = "b" }, []string{"AgentID", "ListenPort"}},
 	}
 	for _, tc := range tests {

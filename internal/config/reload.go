@@ -97,22 +97,28 @@ func sameActionSet(a, b []string) bool {
 	return true
 }
 
-// actionsEqual compares the configured fields of every action. It does not use
-// reflect.DeepEqual because Parameter carries a compiled regexp whose internal
-// state is not a stable basis for comparison; Pattern is its source.
+// actionsEqual compares every field of every action, so a field added to
+// Action or Parameter later is restart-only without touching this function.
+// Only the compiled regexp is left out: its internal state is not a stable
+// basis for comparison, and Pattern is its source.
 func actionsEqual(a, b map[string]*Action) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for name, x := range a {
 		y, ok := b[name]
-		if !ok || x.Command != y.Command || x.Timeout != y.Timeout ||
-			x.Concurrency != y.Concurrency || len(x.Parameters) != len(y.Parameters) {
+		if !ok || len(x.Parameters) != len(y.Parameters) {
+			return false
+		}
+		xa, ya := *x, *y
+		xa.Parameters, ya.Parameters = nil, nil
+		if !reflect.DeepEqual(xa, ya) {
 			return false
 		}
 		for pn, px := range x.Parameters {
 			py, ok := y.Parameters[pn]
-			if !ok || px.Type != py.Type || px.Pattern != py.Pattern || px.Required != py.Required {
+			px.compiled, py.compiled = nil, nil
+			if !ok || px != py {
 				return false
 			}
 		}

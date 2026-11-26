@@ -38,8 +38,9 @@ type idempotencyEntry struct {
 }
 
 // idempotencyStore remembers which job answered a key, so a retried trigger
-// returns that job instead of starting another run. It is in memory only: a
-// restart forgets every key, like the job history itself.
+// returns that job instead of starting another run. Like the job history, it
+// is in memory unless jobs.state_path is set, in which case unexpired keys
+// survive a restart (see persist.go).
 type idempotencyStore struct {
 	// mu is held across the whole check-trigger-record sequence, so two
 	// concurrent requests with the same key cannot both start a job. Only

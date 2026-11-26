@@ -133,12 +133,14 @@ If step 5 or 6 fails, the previous binary/config/certs are still on disk
 
 ## What Axiom validates automatically
 
-At every startup, independent of the manual flow above: `ca_file` is
-checked for valid PEM certificate data; `cert_file` is checked for valid
-PEM/X.509; `key_file` is checked for valid PEM data; all three (and every
-directory above them) are checked for correct ownership and that no
-untrusted local user could have modified them. Axiom refuses to start
-otherwise, with a specific error naming the problem — see
+At every startup and every reload, independent of the manual flow above:
+`ca_file` is checked for valid PEM certificate data; `cert_file` is checked
+for valid PEM/X.509; `key_file` is checked for valid PEM data and must match
+the certificate; `crl_file`, when set, must be signed by a CA in `ca_file` and
+not past its `nextUpdate`; all of them (and every directory above them) are
+checked for correct ownership and that no untrusted local user could have
+modified them. Axiom refuses to start, or a reload changes nothing, otherwise,
+with a specific error naming the problem — see
 [`INSTALL.md` §12](INSTALL.md#12-startup-validation-reference).
 
 ## If a client certificate is compromised
@@ -155,7 +157,9 @@ from the next request, even on open connections. Either way:
    `authorization.identities` (or just the actions it must not run) in
    `/etc/axiom/config.yaml`, then `systemctl reload axiom`
    (`sc.exe control axiom paramchange` on Windows). Running jobs are not
-   cancelled. If the reload is refused or fails, the log says why and the old
+   cancelled. This stops new triggers only: until the certificate expires or
+   is revoked, it can still read the status and output of jobs it already
+   started. If the reload is refused or fails, the log says why and the old
    authorization stays in force, so check the log and, if the file also
    contains restart-only changes, restart instead (`systemctl restart axiom`
    or `Restart-Service axiom`), which cancels running jobs.
