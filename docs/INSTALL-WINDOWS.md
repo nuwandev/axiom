@@ -400,6 +400,14 @@ since it's environment-specific) so a rollback is "redeploy the previous
 file," the same as any other config-as-code rollback — Axiom itself keeps
 no "previous config" on disk.
 
+Rolling back from v2.2.0 to v2.1.0 needs the configuration put back if it uses
+any of `security.mtls.crl_file`, `agent.listen.max_connections`,
+`jobs.idempotency_window` or `jobs.state_path`: v2.1.0 rejects unknown keys,
+so the service will not start until they are removed. A job state file left
+on disk is ignored. v2.1.0 does not accept `paramchange`, so
+`sc.exe control axiom paramchange` is refused by the service manager; use
+`Restart-Service axiom` instead.
+
 ---
 
 ## 13. Uninstall

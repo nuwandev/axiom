@@ -8,6 +8,12 @@ backward-compatible additions bump minor; fixes bump patch.
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-11-26
+
+Minor release. Every new setting is optional and off by default (the
+idempotency window only applies to requests that send the new header), so an
+unchanged configuration behaves as before. The systemd unit changed.
+
 ### Added
 - **Job state across restarts (opt-in).** `jobs.state_path` names an
   append-only file that keeps each job's status, exit code, error and times,
@@ -63,13 +69,28 @@ backward-compatible additions bump minor; fixes bump patch.
   that is read once (actions, listen address, limits, audit settings,
   `agent.*`), the whole reload is refused and the log names those settings.
   Open connections keep their negotiated server certificate, but client
-  certificates are re-checked against the current CA and identities on every
-  request. Every reload is audited: `reloaded` (with the identities added,
+  certificates are re-checked against the current CA and CRL on every request,
+  and against the current identities on every trigger. Removing an identity
+  stops its triggers; its certificate can still read the jobs it started. Every reload is audited: `reloaded` (with the identities added,
   removed or changed) or `reload_failed` (with the reason), Windows event IDs
   105 and 106. The audit write follows the change and cannot gate it. The shipped
   systemd unit gains `ExecReload`; it was not exercised under systemd, and
   the Windows `paramchange` path has not been run against a real service
   manager (the Linux signal path was run end to end).
+
+### Changed
+- `packaging/axiom.service` gains `ExecReload=/bin/kill -HUP $MAINPID`. The
+  RPM replaces the unit and reloads systemd on upgrade; a binary-only install
+  must reinstall the unit and run `systemctl daemon-reload` (INSTALL.md §13)
+  before `systemctl reload axiom` works.
+- Documentation updated for reload, revocation, the connection cap,
+  idempotency keys and job state (configuration reference, certificates, threat
+  model, security overview, install guides, Jenkins integration, example
+  configs, Postman collection, documentation site). Rolling back to v2.1.0
+  needs `security.mtls.crl_file`, `agent.listen.max_connections`,
+  `jobs.idempotency_window` and `jobs.state_path` removed from the
+  configuration first, and must not use `systemctl reload` afterwards: v2.1.0
+  exits on `SIGHUP` and is not restarted (INSTALL.md §14).
 
 ## [2.1.0] — 2026-11-23
 

@@ -124,10 +124,10 @@ systemd unit in one step, and gives you real upgrade/uninstall support
 (`dnf upgrade` / `dnf remove`) instead of a manual script:
 
 ```bash
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/axiom-2.1.0-1.x86_64.rpm
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/axiom-2.2.0-1.x86_64.rpm
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-sudo dnf install ./axiom-2.1.0-1.x86_64.rpm
+sudo dnf install ./axiom-2.2.0-1.x86_64.rpm
 ```
 
 (`aarch64` builds are published alongside the `x86_64` ones for arm64
@@ -157,21 +157,21 @@ a full checkout of this repository.
 
 ```bash
 # pick the asset matching your server's CPU
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/axiom-v2.1.0-linux-amd64
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/axiom-v2.2.0-linux-amd64
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-chmod +x axiom-v2.1.0-linux-amd64
+chmod +x axiom-v2.2.0-linux-amd64
 
 # the installer and systemd unit are small text files pulled directly from
 # the tagged release, not the whole repo
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/scripts/install.sh
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/packaging/axiom.service
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/scripts/install.sh
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/packaging/axiom.service
 chmod +x install.sh
 
 # SYSTEMD_UNIT_SRC is required here: install.sh's default path assumes it's
 # still sitting inside the repo's scripts/ directory next to a sibling
 # packaging/ directory, which isn't true for a standalone download like this.
-sudo BIN_SRC=./axiom-v2.1.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
+sudo BIN_SRC=./axiom-v2.2.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
 ```
 
 Always verify the checksum (`sha256sum -c`) before running anything you
@@ -260,7 +260,7 @@ which client identities may call which actions.
 sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yaml
 
 # or, on a server with no checkout (matches §4a):
-curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/configs/example.yaml
+curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/configs/example.yaml
 sudo install -o root -g axiom -m 0640 config.yaml /etc/axiom/config.yaml
 
 sudo vi /etc/axiom/config.yaml
@@ -590,6 +590,16 @@ sudo systemctl stop axiom
 sudo cp /usr/local/bin/axiom.previous /usr/local/bin/axiom
 sudo systemctl start axiom
 ```
+
+Rolling back from v2.2.0 to v2.1.0 also needs the configuration put back if
+it uses any of `security.mtls.crl_file`, `agent.listen.max_connections`,
+`jobs.idempotency_window` or `jobs.state_path`: v2.1.0 rejects unknown keys,
+so it will not start until they are removed. A job state file left on disk is
+ignored by v2.1.0. Do not run `systemctl reload axiom` against a v2.1.0
+binary: it has no `SIGHUP` handler, so the signal ends the process at once
+without its graceful shutdown, and systemd treats that as a clean exit and
+does not restart it under `Restart=on-failure`. The binary-only rollback above
+keeps the v2.2.0 unit, whose `ExecReload` sends that signal; restart instead.
 
 Rolling back from v2.1.0 to v2.0.x also needs the configuration put back if
 it uses `jobs.max_triggers_per_minute` (or `audit.syslog` on Windows): v2.0.x
