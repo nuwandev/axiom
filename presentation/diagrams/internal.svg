@@ -69,7 +69,7 @@
 <text x="56" y="674" class="ax-t">identities → allowlists, actions, limits</text>
 <text x="56" y="692" class="ax-t">parameter patterns compiled as ^(?:…)$</text>
 <text x="56" y="710" class="ax-t">script, cert, key, ancestor integrity</text>
-<text x="56" y="728" class="ax-t">read once: no hot reload</text>
+<text x="56" y="728" class="ax-t">identities, certs reload on SIGHUP</text>
 <rect x="560" y="586" width="480" height="168" rx="8" class="ax-box ax-box-aud"/>
 <text x="576" y="612" class="ax-tb">Audit subsystem</text>
 <text x="576" y="631" class="ax-tm">internal/audit/audit.go · Logger.Write</text>

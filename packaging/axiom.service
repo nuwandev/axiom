@@ -8,6 +8,9 @@ Type=simple
 User=axiom
 Group=axiom
 ExecStart=/usr/local/bin/axiom -config /etc/axiom/config.yaml
+# `systemctl reload axiom` re-reads identities and certificates without
+# cancelling running jobs (see docs/certificates.md for what is reloadable).
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
 

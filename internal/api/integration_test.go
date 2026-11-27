@@ -43,6 +43,9 @@ type testEnv struct {
 	serverCert string
 	serverKey  string
 	dir        string
+	srv        *Server
+	cfg        *config.Config
+	configPath string
 }
 
 // testEnvOptions lets individual tests add extra actions/identities/flags
@@ -58,6 +61,12 @@ type testEnvOptions struct {
 	slowAction bool
 	// unlistedAction adds "frontend.deploy", which no identity may run.
 	unlistedAction bool
+	// paramAction adds "param.action" (one required "tag" parameter), allowed
+	// for ci-jenkins.
+	paramAction bool
+	// restoredJobID, when set, starts the job manager on a state file that
+	// already holds this finished job (owned by ci-jenkins), as after a restart.
+	restoredJobID string
 }
 
 func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
@@ -79,6 +88,11 @@ func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
 		slow := writeFile(t, dir, "slow.sh", []byte("#!/bin/sh\nsleep 5\n"), 0o750)
 		opts.extraActionsYAML += "  slow.action:\n    command: " + slow + "\n    timeout: 10s\n    concurrency: shared\n"
 	}
+	if opts.paramAction {
+		param := writeFile(t, dir, "param.sh", []byte("#!/bin/sh\nexit 0\n"), 0o750)
+		opts.extraActionsYAML += "  param.action:\n    command: " + param + "\n    timeout: 5s\n    concurrency: shared\n" +
+			"    parameters:\n      tag:\n        type: string\n        pattern: '[a-z0-9.]+'\n        required: true\n"
+	}
 	if opts.unlistedAction {
 		// A script owned by the test user, not a system binary: /bin/true is a
 		// symlink on some distributions and config.Load rejects symlinks.
@@ -88,6 +102,9 @@ func newTestEnv(t *testing.T, opts *testEnvOptions) *testEnv {
 	identityExtra := ""
 	if opts.slowAction {
 		identityExtra = "        - slow.action\n"
+	}
+	if opts.paramAction {
+		identityExtra += "        - param.action\n"
 	}
 	healthBlock := ""
 	if opts.healthAnonymous {
@@ -144,6 +161,15 @@ authorization:
 	t.Cleanup(func() { auditLogger.Close() })
 
 	jobMgr := jobs.NewManager(cfg, auditLogger, slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if opts.restoredJobID != "" {
+		record := fmt.Sprintf(`{"type":"job","id":%q,"action":"sample.action","requested_by":"ci-jenkins","status":"succeeded",`+
+			`"created_at":"2026-11-01T12:00:00Z","started_at":"2026-11-01T12:00:01Z","finished_at":"2026-11-01T12:00:02Z","expires":"0001-01-01T00:00:00Z"}`+"\n", opts.restoredJobID)
+		statePath := writeFile(t, dir, "jobs.state", []byte(record), 0o600)
+		if err := jobMgr.EnableState(statePath); err != nil {
+			t.Fatalf("EnableState: %v", err)
+		}
+		t.Cleanup(func() { jobMgr.CloseState() })
+	}
 
 	srv, err := NewServer(cfg, jobMgr, auditLogger, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err != nil {
@@ -160,7 +186,7 @@ authorization:
 	hts.StartTLS()
 	t.Cleanup(hts.Close)
 
-	return &testEnv{t: t, server: hts, ca: ca, dir: dir}
+	return &testEnv{t: t, server: hts, ca: ca, dir: dir, srv: srv, cfg: cfg, configPath: configPath}
 }
 
 func (e *testEnv) clientFor(certPEM, keyPEM []byte) *http.Client {

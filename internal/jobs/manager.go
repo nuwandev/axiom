@@ -64,6 +64,8 @@ type Manager struct {
 	maxHistory     int
 	maxConcurrent  int
 	limiter        *rateLimiter // nil when jobs.max_triggers_per_minute is 0
+	idem           *idempotencyStore
+	state          *stateStore // nil unless EnableState was called
 
 	mu       sync.Mutex
 	active   int            // queued+running jobs holding a slot; guarded by mu
@@ -97,6 +99,7 @@ func NewManager(cfg *config.Config, auditLogger *audit.Logger, logger *slog.Logg
 	}
 	return &Manager{
 		limiter:        limiter,
+		idem:           newIdempotencyStore(idempotencyWindow(cfg), time.Now),
 		cfg:            cfg,
 		audit:          auditLogger,
 		logger:         logger,
@@ -295,6 +298,7 @@ func (m *Manager) Trigger(ctx context.Context, actionName, identity string, para
 		return nil, fmt.Errorf("audit log unavailable, refusing to start job: %w", err)
 	}
 
+	m.persistJob(job)
 	go m.run(runCtx, cancel, job, action, lock)
 
 	return job, nil
@@ -371,6 +375,7 @@ func (m *Manager) writeFinished(job *Job, status Status, reason string) {
 	}); err != nil {
 		m.logger.Error("audit write failed for job completion", "job_id", job.ID, "error", err)
 	}
+	m.persistJob(job)
 }
 
 func (m *Manager) removeJob(jobID string) {
@@ -433,6 +438,7 @@ func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, job *Job, 
 			}); err != nil {
 				m.logger.Error("audit write failed for panic-recovery job completion", "job_id", job.ID, "error", err)
 			}
+			m.persistJob(job)
 		}
 	}()
 
@@ -462,6 +468,7 @@ func (m *Manager) run(ctx context.Context, cancel context.CancelFunc, job *Job, 
 		return
 	}
 	job.setRunning()
+	m.persistJob(job)
 
 	env := buildEnv(job.ID, job.Action, job.Parameters)
 	result, execErr := executor.Run(ctx, executor.Spec{

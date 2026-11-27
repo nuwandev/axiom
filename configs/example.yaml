@@ -7,12 +7,17 @@ agent:
   listen:
     address: 0.0.0.0
     port: 8443
+    # max_connections: 256   # optional, off (0) by default: most connections
+    #                        # open at once, TLS handshakes included.
 
 security:
   mtls:
     ca_file: /etc/axiom/certs/ca.crt
     cert_file: /etc/axiom/certs/server.crt
     key_file: /etc/axiom/certs/server.key
+    # crl_file: /etc/axiom/certs/ca.crl   # optional: revoked client certificates,
+    #                                     # signed by ca_file; re-read on reload.
+    #                                     # Refuses every client after its nextUpdate.
   # health:
   #   allow_anonymous: true   # off by default; opt in only if your network
   #                           # health check cannot present a client cert.
@@ -32,12 +37,18 @@ jobs:
   max_concurrent: 16   # agent-wide cap on queued+running jobs (all actions);
                        # over the cap a trigger gets 429 and creates no job.
   max_history: 1000    # in-memory job count kept for GET /v1/jobs/{id}; oldest
-                        # finished job is evicted once this is exceeded. This is
-                        # not a durable store — job history is lost on restart.
-                        # The audit log is the durable execution record.
+                        # finished job is evicted once this is exceeded. In memory
+                        # unless state_path is set; output is never kept across a
+                        # restart. The audit log is the durable execution record.
+  # state_path: /var/lib/axiom/jobs.state   # optional: keep job status and
+  #                               # idempotency keys across restarts (never output
+  #                               # or parameter values). Directory must be owned
+  #                               # by the service account. See docs/INSTALL.md s11.
   # max_triggers_per_minute: 60   # optional, off (0) by default: most triggers one
   #                               # identity may make per minute; over it a trigger
   #                               # gets 429 with Retry-After and creates no job.
+  # idempotency_window: 10m       # optional, default 10m: how long an Idempotency-Key
+  #                               # sent with a trigger is remembered (1s-24h).
 
 actions:
   # Trigger this first after a fresh install to confirm mTLS, authorization,

@@ -19,7 +19,7 @@ const identityContextKey contextKey = iota
 // rejected regardless of path.
 func (s *Server) withIdentity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		anonymousHealth := r.URL.Path == "/health" && s.cfg.HealthAllowAnonymous
+		anonymousHealth := r.URL.Path == "/health" && s.cfg.Load().HealthAllowAnonymous
 
 		if r.TLS == nil {
 			if anonymousHealth {
@@ -30,7 +30,7 @@ func (s *Server) withIdentity(next http.Handler) http.Handler {
 			return
 		}
 
-		id, err := auth.Verify(r.TLS.PeerCertificates, s.caPool)
+		id, err := s.tls.Verify(r.TLS.PeerCertificates)
 		if err != nil {
 			if anonymousHealth {
 				next.ServeHTTP(w, r)

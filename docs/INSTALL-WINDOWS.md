@@ -267,9 +267,12 @@ NTFS terms.
 
 Same model as Linux ([`certificates.md`](certificates.md)): Axiom loads and
 verifies PEM files, never issues or renews them. Place `ca.crt`,
-`server.crt`, `server.key` in `%ProgramData%\Axiom\certs\`. Renewal requires
-a service restart (`Restart-Service axiom`) — there is no hot reload. The
-Windows certificate store is not used.
+`server.crt`, `server.key` in `%ProgramData%\Axiom\certs\`. After renewal, or
+after editing `authorization.identities`, apply the change without a restart:
+`sc.exe control axiom paramchange` (run elevated; see
+[`certificates.md`](certificates.md#reload-after-renewal) for what a reload
+covers and refuses). Any other config change needs `Restart-Service axiom`.
+The Windows certificate store is not used.
 
 ---
 
@@ -294,18 +297,25 @@ that first for anything that fails to come up. Axiom does not rotate
 `axiom.log` or `audit.log` itself; configure rotation with your normal
 tooling if you need it.
 
-**Job history does not survive a restart.** `GET /v1/jobs/{id}` and
-`GET /v1/jobs/{id}/logs` are backed by in-memory state only — restarting
-the process (an upgrade, a crash, a host reboot, `Restart-Service`,
-anything) clears it completely, and any job ID a caller was polling before
-the restart becomes unknown afterward. **`audit.log` is the durable
-execution record** — every accepted, started, finished
-(success/failure/timeout/cancelled), and rejected request is written there
-synchronously and survives restarts; if you need to know what happened to
-a job across a restart boundary, that's where the answer lives, not the
-job API. This is a deliberate v1 scope decision shared with the Linux
-build, not a Windows-specific limitation — see
-[`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior) §11.
+**Job history does not survive a restart unless you opt in.** By default
+`GET /v1/jobs/{id}` and `GET /v1/jobs/{id}/logs` are backed by in-memory
+state only: restarting the process (an upgrade, a crash, a host reboot,
+`Restart-Service`, anything) clears it, and any job ID a caller was polling
+before the restart becomes unknown afterward. To keep job status and
+idempotency keys across restarts, set `jobs.state_path` to a file in a
+directory the service account can write, for example
+`C:\ProgramData\Axiom\logs\jobs.state` (the same directory as `audit.log`, so
+it already has the right ACL). Output is never written to it, so
+`GET /v1/jobs/{id}/logs` answers `410` for a job from before the restart, and
+a job that was running when the service stopped comes back `cancelled`; the
+behaviour is the same as on Linux, described in
+[`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior) §11. The state
+file's logic is covered by unit tests on Windows, but the full restart
+behaviour has only been exercised on Linux, not yet on a Windows host.
+**`audit.log` is the durable execution record** either way — every accepted,
+started, finished (success/failure/timeout/cancelled), and rejected request
+is written there synchronously and survives restarts; if you need to know what
+happened to a job across a restart boundary, that's where the answer lives.
 
 Verify the listener itself from a client holding a valid, authorized
 client certificate:
@@ -339,7 +349,7 @@ route answers `401`.
 | `403` on a request you expect to work | client cert CN not listed under `authorization.identities`, or not for that action — `certutil -dump client.crt` for the CN |
 | `404` on `POST /v1/actions/{name}` | action name doesn't exist in config, or the name had disallowed characters — check `actions:` in `config.yaml` |
 | `409` on a trigger | that action is `concurrency: exclusive` and already running — `GET /v1/jobs/{id}` on the in-flight job, or check `audit.log` |
-| `GET /v1/jobs/{id}` returns `404` for a job you triggered earlier | the service restarted since (in-memory job state doesn't survive a restart), or the job aged out of the bounded history (`jobs.max_history`) — check `audit.log` for the durable record |
+| `GET /v1/jobs/{id}` returns `404` for a job you triggered earlier | the service restarted since and `jobs.state_path` is not set (job state is in memory by default), or the job aged out of the bounded history (`jobs.max_history`) — check `audit.log` for the durable record |
 | action script fails but you can't see why | `GET /v1/jobs/{id}/logs` for its captured stdout/stderr |
 
 ---
@@ -389,6 +399,14 @@ Config: keep `config.yaml` under version control (outside this repository,
 since it's environment-specific) so a rollback is "redeploy the previous
 file," the same as any other config-as-code rollback — Axiom itself keeps
 no "previous config" on disk.
+
+Rolling back from v2.2.0 to v2.1.0 needs the configuration put back if it uses
+any of `security.mtls.crl_file`, `agent.listen.max_connections`,
+`jobs.idempotency_window` or `jobs.state_path`: v2.1.0 rejects unknown keys,
+so the service will not start until they are removed. A job state file left
+on disk is ignored. v2.1.0 does not accept `paramchange`, so
+`sc.exe control axiom paramchange` is refused by the service manager; use
+`Restart-Service axiom` instead.
 
 ---
 

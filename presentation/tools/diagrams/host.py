@@ -20,7 +20,7 @@ s.text(40, 86, "READ-ONLY TO THE SERVICE ACCOUNT", "ax-th")
 s.text(40, 102, "checked at startup: the agent refuses to start otherwise", "ax-ts")
 items = [
     ("Binary", "/usr/local/bin/axiom", "%ProgramFiles%\\Axiom\\axiom.exe", "static Go binary"),
-    ("Configuration", "/etc/axiom/config.yaml", "%ProgramData%\\Axiom\\config.yaml", "identities, actions, limits: read once"),
+    ("Configuration", "/etc/axiom/config.yaml", "%ProgramData%\\Axiom\\config.yaml", "identities reload; actions, limits: read once"),
     ("Certificates", "/etc/axiom/certs/*", "%ProgramData%\\Axiom\\certs\\*", "ca.crt, server.crt, server.key"),
     ("Action scripts", "/opt/axiom/actions/*.sh", "%ProgramData%\\Axiom\\capabilities\\*.ps1", "reviewed and installed by the bank"),
 ]

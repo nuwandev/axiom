@@ -153,7 +153,7 @@
               "host": ["{{base_url}}"],
               "path": ["v1", "jobs", "{{job_id}}"]
             },
-            "description": "GET /v1/jobs/{job_id}. Run 'Trigger Action' first (or set {{job_id}} manually) so this has a real job to look up.\n\nStatus is one of: queued, running, succeeded, failed, cancelled. Poll this on an interval (e.g. every 5-10s) until it reaches a terminal state (succeeded/failed/cancelled) -- see docs/jenkins-integration.md for the polling pattern a real CI caller uses.\n\n404 means either the job_id is wrong/malformed, or the Axiom agent has restarted since the job ran -- job history is in-memory only and does not survive a restart (see docs/INSTALL.md section 11); the audit log is the durable record instead."
+            "description": "GET /v1/jobs/{job_id}. Run 'Trigger Action' first (or set {{job_id}} manually) so this has a real job to look up.\n\nStatus is one of: queued, running, succeeded, failed, cancelled. Poll this on an interval (e.g. every 5-10s) until it reaches a terminal state (succeeded/failed/cancelled) -- see docs/jenkins-integration.md for the polling pattern a real CI caller uses.\n\n404 means either the job_id is wrong/malformed, or the Axiom agent has restarted since the job ran -- job history is in memory unless the agent sets jobs.state_path, so it does not survive a restart by default (see docs/INSTALL.md section 11); the audit log is the durable record instead."
           },
           "event": [
             {
@@ -187,7 +187,7 @@
               "host": ["{{base_url}}"],
               "path": ["v1", "jobs", "{{job_id}}", "logs"]
             },
-            "description": "GET /v1/jobs/{job_id}/logs. Captured stdout/stderr for the job, size-bounded per the target agent's output.max_bytes config (default 2 MiB per stream). stdout_truncated/stderr_truncated indicate whether the cap was hit."
+            "description": "GET /v1/jobs/{job_id}/logs. Captured stdout/stderr for the job, size-bounded per the target agent's output.max_bytes config (default 2 MiB per stream). stdout_truncated/stderr_truncated indicate whether the cap was hit.\n\n410 means the job ran before an agent restart: its status may still be available (jobs.state_path), but output is never kept across a restart."
           },
           "event": [
             {

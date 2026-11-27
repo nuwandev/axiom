@@ -37,6 +37,13 @@ func main() {
 // Control Manager. Neither duplicates any of the startup or shutdown logic
 // below.
 func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+	return serveWithReload(ctx, cfg, logger, nil, nil)
+}
+
+// serveWithReload is serve plus live reload: each value received on reload
+// re-reads the configuration through load and applies the reloadable parts
+// (see api.Server.Reload). A nil reload channel disables it.
+func serveWithReload(ctx context.Context, cfg *config.Config, logger *slog.Logger, reload <-chan struct{}, load func() (*config.Config, error)) error {
 	if err := executor.CheckPlatformPrerequisites(); err != nil {
 		return fmt.Errorf("platform prerequisites: %w", err)
 	}
@@ -56,6 +63,18 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	defer auditLogger.Close()
 
 	jobMgr := jobs.NewManager(cfg, auditLogger, logger)
+	if cfg.JobStatePath != "" {
+		if err := jobMgr.EnableState(cfg.JobStatePath); err != nil {
+			return fmt.Errorf("enabling job state: %w", err)
+		}
+		// Registered before the shutdown defer below, so it runs after the
+		// jobs have written their final records.
+		defer func() {
+			if err := jobMgr.CloseState(); err != nil {
+				logger.Error("closing job state file failed", "error", err)
+			}
+		}()
+	}
 	// Runs before auditLogger.Close (defers are LIFO): in-flight jobs are
 	// stopped and their "finished" (interrupted) records written while the
 	// audit log is still open. A crash or SIGKILL skips this entirely.
@@ -71,6 +90,8 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("building server: %w", err)
 	}
+
+	go reloadOnSignal(ctx, server, logger, reload, load)
 
 	tlsConfig, err := server.TLSConfig()
 	if err != nil {
@@ -94,12 +115,22 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    32 * 1024,
+		// Failed TLS handshakes (no or untrusted client certificate) are
+		// logged by net/http through this logger. Without it they go to the
+		// process's default logger as unstructured stderr lines. They are
+		// still not audit records: an unauthenticated peer must not be able
+		// to cause a synced audit write per connection attempt.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 	}
 
-	listener, err := tls.Listen("tcp", addr, tlsConfig)
+	tcpListener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", addr, err)
 	}
+	if cfg.MaxConnections > 0 {
+		tcpListener = newLimitListener(tcpListener, cfg.MaxConnections)
+	}
+	listener := tls.NewListener(tcpListener, tlsConfig)
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -123,4 +154,23 @@ func serve(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
 	}
 
 	return nil
+}
+
+// reloadOnSignal applies a reload for every value received until ctx ends. A
+// failed reload is logged and leaves the running configuration untouched:
+// the operator's edit is wrong or incomplete, and the agent must keep serving
+// with what it already has rather than stop or run a half-applied state.
+func reloadOnSignal(ctx context.Context, server *api.Server, logger *slog.Logger, reload <-chan struct{}, load func() (*config.Config, error)) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-reload:
+			if err := server.ReloadFrom(load); err != nil {
+				logger.Error("configuration reload failed; still running with the previous configuration", "error", err)
+				continue
+			}
+			logger.Info("configuration reloaded")
+		}
+	}
 }

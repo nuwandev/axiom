@@ -35,5 +35,22 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return serve(ctx, cfg, logger)
+	// SIGHUP re-reads the configuration; the buffer of one coalesces a burst
+	// of signals into a single pending reload instead of blocking the sender.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	reload := make(chan struct{}, 1)
+	go func() {
+		for range hup {
+			select {
+			case reload <- struct{}{}:
+			default:
+			}
+		}
+	}()
+
+	return serveWithReload(ctx, cfg, logger, reload, func() (*config.Config, error) {
+		return config.Load(*configPath)
+	})
 }

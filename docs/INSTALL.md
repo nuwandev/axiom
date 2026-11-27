@@ -77,8 +77,9 @@ found during real-host validation to break tools an action script may
 reasonably invoke regardless of container engine choice (e.g. the `docker`
 CLI's `~/.docker/config.json` for private registry credentials, or a
 rootless container engine's runtime-state resolution). Axiom's own job
-history is still in-memory only and does not use this directory (see §11)
-— it exists purely as a stable, writable `$HOME` for child processes.
+history is in memory unless you set `jobs.state_path`, which can point into
+this directory (see §11). Otherwise it exists purely as a stable, writable
+`$HOME` for child processes.
 
 ---
 
@@ -123,10 +124,10 @@ systemd unit in one step, and gives you real upgrade/uninstall support
 (`dnf upgrade` / `dnf remove`) instead of a manual script:
 
 ```bash
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/axiom-2.1.0-1.x86_64.rpm
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/axiom-2.2.0-1.x86_64.rpm
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-sudo dnf install ./axiom-2.1.0-1.x86_64.rpm
+sudo dnf install ./axiom-2.2.0-1.x86_64.rpm
 ```
 
 (`aarch64` builds are published alongside the `x86_64` ones for arm64
@@ -156,21 +157,21 @@ a full checkout of this repository.
 
 ```bash
 # pick the asset matching your server's CPU
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/axiom-v2.1.0-linux-amd64
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.1.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/axiom-v2.2.0-linux-amd64
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-chmod +x axiom-v2.1.0-linux-amd64
+chmod +x axiom-v2.2.0-linux-amd64
 
 # the installer and systemd unit are small text files pulled directly from
 # the tagged release, not the whole repo
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/scripts/install.sh
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/packaging/axiom.service
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/scripts/install.sh
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/packaging/axiom.service
 chmod +x install.sh
 
 # SYSTEMD_UNIT_SRC is required here: install.sh's default path assumes it's
 # still sitting inside the repo's scripts/ directory next to a sibling
 # packaging/ directory, which isn't true for a standalone download like this.
-sudo BIN_SRC=./axiom-v2.1.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
+sudo BIN_SRC=./axiom-v2.2.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
 ```
 
 Always verify the checksum (`sha256sum -c`) before running anything you
@@ -259,7 +260,7 @@ which client identities may call which actions.
 sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yaml
 
 # or, on a server with no checkout (matches §4a):
-curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.1.0/configs/example.yaml
+curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/configs/example.yaml
 sudo install -o root -g axiom -m 0640 config.yaml /etc/axiom/config.yaml
 
 sudo vi /etc/axiom/config.yaml
@@ -275,7 +276,7 @@ Key fields, see the example file for the full annotated reference:
 - `audit.path` — defaults to `/var/log/axiom/audit.log`.
 - `output.max_bytes` — per-stream captured-output cap, default 2 MiB.
 - `jobs.max_history` — in-memory job count retained for polling, default
-  1000 (see §11 — this is not durable storage).
+  1000. Not durable unless `jobs.state_path` is set (see §11).
 - `jobs.max_concurrent` — cap on queued+running jobs across all actions,
   default 16; over it a trigger gets `429` and creates no job.
 - `actions.<name>` — one entry per action this agent exposes: `command`
@@ -480,21 +481,49 @@ route answers `401`.
 
 ## 11. Job history and restart behavior
 
-The job list (`GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/logs`) is **in-memory
-only**. Restarting the Axiom process — for an upgrade, a crash, a host
+The job list (`GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/logs`) is **in memory
+by default**. Restarting the Axiom process — for an upgrade, a crash, a host
 reboot, anything — clears it completely; any job IDs a caller was polling
 before the restart become unknown afterward.
+
+**Optional: keep job status across restarts.** Set `jobs.state_path` (for
+example `/var/lib/axiom/jobs.state`, a directory the service account owns and
+nobody else can write to) and Axiom keeps an append-only file of job status
+and idempotency keys. After a restart:
+
+- `GET /v1/jobs/{id}` still answers for the newest `jobs.max_history` jobs,
+  with their status, exit code, error and times, to the identity that ran them.
+- `GET /v1/jobs/{id}/logs` answers `410 Gone` for those jobs. **Script output
+  and parameter values are never written to the file**, so output does not
+  survive a restart.
+- A job that was queued or running when the agent stopped comes back as
+  `cancelled` with the error `interrupted: agent restarted before this job's
+  result was recorded`, and no duration. Its script may have finished or been
+  killed with the agent; the audit log is where to look. A graceful stop
+  already records jobs as interrupted; this covers a crash, `SIGKILL` or power
+  loss.
+- Idempotency keys survive too, so a retry after the restart returns the
+  original job instead of running the action again.
+
+The file is created with mode `0600`, replaced atomically when it is compacted
+(at start-up, and once it holds ten times `jobs.max_history` lines), and
+checked at start-up: a half-written last line, which is what a crash during a
+write leaves, is dropped, but any other damaged line stops Axiom from starting
+rather than silently losing history. A write failure is logged
+(`persisting job state failed`) and does not fail the job. The file is a
+convenience, not a record of truth: the service account that runs your scripts
+can also write it, and a job whose write failed is simply missing after a
+restart. It is restart-only configuration.
 
 **The audit log is the durable execution record.** Every accepted,
 started, finished (success/failure/timeout/cancelled), and rejected request
 is written there synchronously, and it survives process restarts. If a
 caller needs to know what happened to a job across a restart boundary, that
-answer lives in `/var/log/axiom/audit.log`, not in the job API.
+answer lives in `/var/log/axiom/audit.log`, whether or not `jobs.state_path`
+is set.
 
-This is a deliberate v1 scope decision — Axiom does not use a database to
-persist job history. Given the durable audit trail already covers the
-same information, adding one to make in-flight polling restart-durable
-was judged not worth the added component.
+Without `jobs.state_path`, Axiom uses no database and persists no job history:
+the durable audit trail already covers the same information.
 
 ---
 
@@ -562,6 +591,16 @@ sudo cp /usr/local/bin/axiom.previous /usr/local/bin/axiom
 sudo systemctl start axiom
 ```
 
+Rolling back from v2.2.0 to v2.1.0 also needs the configuration put back if
+it uses any of `security.mtls.crl_file`, `agent.listen.max_connections`,
+`jobs.idempotency_window` or `jobs.state_path`: v2.1.0 rejects unknown keys,
+so it will not start until they are removed. A job state file left on disk is
+ignored by v2.1.0. Do not run `systemctl reload axiom` against a v2.1.0
+binary: it has no `SIGHUP` handler, so the signal ends the process at once
+without its graceful shutdown, and systemd treats that as a clean exit and
+does not restart it under `Restart=on-failure`. The binary-only rollback above
+keeps the v2.2.0 unit, whose `ExecReload` sends that signal; restart instead.
+
 Rolling back from v2.1.0 to v2.0.x also needs the configuration put back if
 it uses `jobs.max_triggers_per_minute` (or `audit.syslog` on Windows): v2.0.x
 rejects unknown keys, and refuses `audit.syslog` on Windows, so it will not start
@@ -600,7 +639,7 @@ kept on disk by Axiom itself.
 | `404` on `POST /v1/actions/{name}` | Action name doesn't exist in config, or path had disallowed characters | Check `actions:` in config |
 | `409` on a trigger | That action is `concurrency: exclusive` and already running | `GET /v1/jobs/{id}` on the in-flight job, or check the audit log |
 | Job stuck in `running` past its expected duration | Should self-resolve at `timeout` — Axiom kills the full process tree, not just the direct child | If it doesn't resolve, that's a bug — check `journalctl` for executor errors |
-| `GET /v1/jobs/{id}` returns 404 for a job you triggered earlier | Axiom restarted since (§11), or the job was evicted from the bounded in-memory history (`jobs.max_history`) | Check `/var/log/axiom/audit.log` for the durable record |
+| `GET /v1/jobs/{id}` returns 404 for a job you triggered earlier | Axiom restarted since and `jobs.state_path` is not set (§11), or the job was evicted from the bounded history (`jobs.max_history`) | Check `/var/log/axiom/audit.log` for the durable record |
 | Action script fails but you can't see why | Fetch its captured output | `GET /v1/jobs/{id}/logs` |
 
 ---

@@ -6,6 +6,92 @@ follows [Semantic Versioning](https://semver.org/): breaking changes to
 the API surface, config schema, or CLI flags bump the major version;
 backward-compatible additions bump minor; fixes bump patch.
 
+## [Unreleased]
+
+## [2.2.0] — 2026-11-26
+
+Minor release. Every new setting is optional and off by default (the
+idempotency window only applies to requests that send the new header), so an
+unchanged configuration behaves as before. The systemd unit changed.
+
+### Added
+- **Job state across restarts (opt-in).** `jobs.state_path` names an
+  append-only file that keeps each job's status, exit code, error and times,
+  and idempotency keys, so they survive a restart. Off by default, so an
+  upgrade changes nothing. Script output and parameter values are never
+  written. After a restart the newest `jobs.max_history` jobs answer
+  `GET /v1/jobs/{id}` for the identity that ran them; their `/logs` answer
+  `410 Gone`; a job that was queued or running comes back `cancelled` with the
+  error `interrupted: agent restarted before this job's result was recorded`
+  and no duration; and a retry with a saved `Idempotency-Key` returns the
+  original job instead of running the action again. The file is mode `0600`,
+  its directory is checked like the audit log's, compaction is atomic, a
+  half-written last line is dropped and any other damaged line stops Axiom
+  from starting. A write failure is logged and does not fail the job. It is
+  not a record of truth: the service account can write it and the audit log
+  remains the durable record. Verified on Linux, including a `kill -9` in the
+  middle of a job; on Windows the store logic is unit-tested but the restart
+  behaviour has not yet been run on a Windows host.
+- **Idempotency keys for triggers.** `POST /v1/actions/{action}` accepts an
+  optional `Idempotency-Key` header (1-128 characters from `A-Za-z0-9._:-`).
+  Within `jobs.idempotency_window` (1s-24h, default 10m) the same identity,
+  action and key returns the job the first request started (`202`, same
+  `job_id`, current `status`, `Idempotent-Replay: true`) and starts nothing,
+  so a client can retry after a lost response without running a shared action
+  twice. The same key with different parameters is `422`; a malformed or
+  repeated header is `400`; a refused request does not use up its key; a
+  replay is not charged to the rate limit or job cap. Keys are in memory
+  (forgotten on restart unless `jobs.state_path` is set) and at most 10,000 are
+  held, past which new keys get
+  `429`. This protects against a client's own retries, not an attacker, who can
+  omit the header. Requests without the header behave as before.
+- **Certificate revocation list.** Optional `security.mtls.crl_file` (PEM or
+  DER, signed by a CA in `ca_file`, held to the same ownership checks as the
+  CA). A listed client certificate is refused with `401` and an audit
+  `rejected` record on every request, including on open connections. The list
+  is re-read on reload, is never fetched, and there is no OCSP. A list past its
+  `nextUpdate` is refused at load, and if it expires while running every client
+  is refused until a fresh list is reloaded. Only the client certificate is
+  checked, not intermediates.
+- **Connection cap.** Optional `agent.listen.max_connections` (0-100000,
+  default 0 = off). Counted from accept, so connections stalled in the TLS
+  handshake use slots; at the cap Axiom stops accepting and excess clients wait
+  in the listen backlog. Restart-only.
+- **Failed TLS handshakes are now logged through the structured service log**
+  at `WARN` instead of unstructured lines on the default logger. They are still
+  not audit records.
+- **Live reload of identities and certificates.** `systemctl reload axiom`
+  (`SIGHUP`) on Linux and `sc.exe control axiom paramchange` on Windows
+  re-read the config file, `authorization.identities`, and the server
+  certificate, key and CA, without cancelling running jobs. A reload applies
+  completely or not at all: any load or validation error is logged and the
+  previous configuration stays in force. If the file also changes anything
+  that is read once (actions, listen address, limits, audit settings,
+  `agent.*`), the whole reload is refused and the log names those settings.
+  Open connections keep their negotiated server certificate, but client
+  certificates are re-checked against the current CA and CRL on every request,
+  and against the current identities on every trigger. Removing an identity
+  stops its triggers; its certificate can still read the jobs it started. Every reload is audited: `reloaded` (with the identities added,
+  removed or changed) or `reload_failed` (with the reason), Windows event IDs
+  105 and 106. The audit write follows the change and cannot gate it. The shipped
+  systemd unit gains `ExecReload`; it was not exercised under systemd, and
+  the Windows `paramchange` path has not been run against a real service
+  manager (the Linux signal path was run end to end).
+
+### Changed
+- `packaging/axiom.service` gains `ExecReload=/bin/kill -HUP $MAINPID`. The
+  RPM replaces the unit and reloads systemd on upgrade; a binary-only install
+  must reinstall the unit and run `systemctl daemon-reload` (INSTALL.md §13)
+  before `systemctl reload axiom` works.
+- Documentation updated for reload, revocation, the connection cap,
+  idempotency keys and job state (configuration reference, certificates, threat
+  model, security overview, install guides, Jenkins integration, example
+  configs, Postman collection, documentation site). Rolling back to v2.1.0
+  needs `security.mtls.crl_file`, `agent.listen.max_connections`,
+  `jobs.idempotency_window` and `jobs.state_path` removed from the
+  configuration first, and must not use `systemctl reload` afterwards: v2.1.0
+  exits on `SIGHUP` and is not restarted (INSTALL.md §14).
+
 ## [2.1.0] — 2026-11-23
 
 Minor release. Both new settings are optional and off by default; one startup

@@ -89,9 +89,10 @@ wildcard or implicit-allow path. Every rejection is written to the audit
 log (`audit.EventRejected`) with the identity and requested action.
 **Blast radius:** none beyond a visible rejected-request audit entry (useful
 for detecting a cert that should be revoked).
-**Residual risk:** Axiom performs no certificate revocation check (no
-CRL/OCSP) — a compromised-but-not-yet-revoked-by-CA certificate for an
-*already-authorized* identity is covered by scenario 3, not this one. If
+**Residual risk:** Axiom checks revocation only against an operator-supplied
+CRL (`security.mtls.crl_file`, off unless set; no OCSP). A compromised
+certificate for an *already-authorized* identity that the CA has not yet
+listed there is covered by scenario 3, not this one. If
 your CA supports short-lived certs, prefer that over long-lived ones for
 this reason.
 
@@ -198,11 +199,19 @@ paths reach action execution.
 
 An attacker who can observe (or has previously captured) a legitimate,
 successfully-authenticated request and resends it.
-**Analysis:** Axiom has no replay-prevention nonce/timestamp mechanism in
-v1. A replayed `POST /v1/actions/{action}` is, from Axiom's perspective,
+**Analysis:** Axiom has no replay-prevention nonce/timestamp mechanism. A
+replayed `POST /v1/actions/{action}` is, from Axiom's perspective,
 indistinguishable from the caller legitimately triggering the same action
 again — which is not inherently a security violation, since triggering
 that action is exactly what that identity is authorized to do.
+**Idempotency keys (client retries, not attackers):** a caller may send an
+`Idempotency-Key` header. Within `jobs.idempotency_window` (default 10
+minutes) the same identity, action and key returns the original job with
+`Idempotent-Replay: true` and starts nothing. This protects against a
+client retrying after a lost response; it does not stop an attacker, who
+can simply omit the header or choose a new key. Keys are held in memory and
+forgotten on restart unless `jobs.state_path` is set, and at most 10,000 are
+held at once.
 **What actually limits this:** (a) TLS itself — a replayed request requires
 either a MITM position on an already-authenticated mTLS channel (out of
 scope; equivalent to compromising the channel itself) or a captured
@@ -213,7 +222,8 @@ not — is fully audited with identity, action, and parameters, so a
 suspicious repeat is visible after the fact.
 **Residual risk, honestly stated:** a shared-concurrency, idempotent-by-
 design action (e.g. `service.restart`) triggered twice in a row via replay
-is not detected as anomalous by Axiom itself. If a specific action is
+is not detected as anomalous by Axiom itself, unless the caller used an
+idempotency key. If a specific action is
 sensitive to duplicate execution, that action's *script* should be written
 idempotently (checking current state before acting) — the spec's action-
 result-validation guidance already recommends this regardless of replay
@@ -336,9 +346,11 @@ deliberately not built: real action scripts here wrap CLI tools
 (docker/kubectl/systemctl/pm2) that don't self-daemonize that way, so the
 added architectural complexity (cgroup creation/delegation/ownership for an
 unprivileged service account) wasn't justified by the actual risk. The
-in-memory job record for an in-flight job is still lost on restart (§11 of
-the install guide) — a caller polling `GET /v1/jobs/{id}` afterward gets
-`404`, not stale state.
+in-memory job record for an in-flight job is lost on restart (§11 of the
+install guide) unless `jobs.state_path` is set. Without it, a caller polling
+`GET /v1/jobs/{id}` afterward gets `404`, not stale state. With it, the job
+comes back `cancelled` with an explicit "interrupted: agent restarted" error
+and no duration, rather than as a job that appears to be still running.
 **What's durable regardless:** the audit log already has the `accepted` and
 `started` records for that job (both written synchronously before/at
 execution start) — an operator can see from the audit trail that a job was
@@ -395,7 +407,7 @@ evidence, not a tamper-resistant record.**
 With `audit.syslog: true` every record is also emitted as one structured JSON
 message to the system log: journald/syslog on Linux (facility AUTH, identifier
 `axiom-audit`) and the Application event log on Windows (source `axiom`, event
-IDs 101 to 104). The paragraphs below describe the Linux path in detail; the
+IDs 101 to 106). The paragraphs below describe the Linux path in detail; the
 Windows differences are in the **Scope** note at the end of this section. The
 authoritative, tamper-resistant record is the collector the host forwards
 that stream to (for example a central SIEM), which the service account
@@ -435,7 +447,8 @@ write fail, so the action is refused rather than run unaudited.
 
 **Scope: Windows.** `audit.syslog: true` writes each record to the
 Application event log under the `axiom` source (`accepted`, `started` and
-`finished` as informational events 101 to 103, `rejected` as warning 104). The
+`finished` as informational events 101 to 103, `rejected` as warning 104,
+`reloaded` as informational 105 and `reload_failed` as warning 106). The
 fail-closed rules are the same as on Linux: an unregistered source stops the
 service from starting, and an event-log write failure refuses the action on the
 accept and start paths. A record over the 31,839-character event limit fails
@@ -509,8 +522,11 @@ configure.
   how often one identity may trigger actions; past it the API answers `429`
   and creates no job. Rate-limited requests are not audited, so a flood cannot
   become synced audit writes.
-- **Not bounded by Axiom:** connections, TLS handshakes from anyone who can
-  reach the port, requests other than triggers (including requests from a
+- **Open connections:** `agent.listen.max_connections` (off by default) caps
+  how many are open at once, handshakes included; failed handshakes are
+  logged, not audited.
+- **Not bounded by Axiom:** the rate of new connections and TLS handshakes
+  from anyone who can reach the port, requests other than triggers (including requests from a
   certificate with no allowlisted identity, each of which writes an audit
   record), CPU, process count or file descriptors used
   by action scripts, and audit writes (each request writes and syncs a

@@ -52,6 +52,17 @@ const (
 	// MaxTriggersPerMinute is the per-identity trigger rate limit; 0 (the
 	// default) leaves it off.
 	MaxTriggersPerMinuteMax = 10000
+
+	// How long an Idempotency-Key is remembered after the request that
+	// first used it. A client retry arrives within seconds to minutes, so a
+	// short default keeps the store small.
+	DefaultIdempotencyWindow = 10 * time.Minute
+	MinIdempotencyWindow     = time.Second
+	MaxIdempotencyWindow     = 24 * time.Hour
+
+	// MaxConnectionsMax bounds agent.listen.max_connections; 0 (the default)
+	// leaves the cap off.
+	MaxConnectionsMax = 100000
 )
 
 // actionNamePattern bounds action names to a safe, predictable charset:
@@ -167,6 +178,9 @@ type mtlsConfig struct {
 	CAFile   string `yaml:"ca_file"`
 	CertFile string `yaml:"cert_file"`
 	KeyFile  string `yaml:"key_file"`
+	// CRLFile is an optional certificate revocation list issued by the CA in
+	// CAFile. Client certificates listed in it are refused.
+	CRLFile string `yaml:"crl_file"`
 }
 
 type healthConfig struct {
@@ -186,6 +200,8 @@ type securityConfig struct {
 type listenConfig struct {
 	Address string `yaml:"address"`
 	Port    int    `yaml:"port"`
+	// MaxConnections caps simultaneously open connections; 0 means no cap.
+	MaxConnections int `yaml:"max_connections"`
 }
 
 type agentConfig struct {
@@ -211,6 +227,11 @@ type jobsConfig struct {
 	MaxHistory           int `yaml:"max_history"`
 	MaxConcurrent        int `yaml:"max_concurrent"`
 	MaxTriggersPerMinute int `yaml:"max_triggers_per_minute"`
+	// IdempotencyWindow is how long an Idempotency-Key is remembered.
+	IdempotencyWindow time.Duration `yaml:"idempotency_window"`
+	// StatePath is an optional file that keeps job status and idempotency
+	// keys across restarts. Empty means they are held in memory only.
+	StatePath string `yaml:"state_path"`
 }
 
 // rawConfig mirrors the on-disk YAML shape before post-load processing.
@@ -239,6 +260,11 @@ type Config struct {
 	CAFile   string
 	CertFile string
 	KeyFile  string
+	// CRLFile is empty when no revocation list is configured.
+	CRLFile string
+
+	// MaxConnections caps simultaneously open connections; 0 means no cap.
+	MaxConnections int
 
 	HealthAllowAnonymous bool
 
@@ -260,6 +286,11 @@ type Config struct {
 	// MaxTriggersPerMinute limits how many actions one identity may trigger
 	// per minute (a token bucket with the same burst); 0 means no limit.
 	MaxTriggersPerMinute int
+	// IdempotencyWindow is how long an Idempotency-Key is remembered; never
+	// zero after Load.
+	IdempotencyWindow time.Duration
+	// JobStatePath is empty when job state is not persisted.
+	JobStatePath string
 }
 
 // Load reads, parses, and strictly validates the configuration at path.
@@ -286,6 +317,8 @@ func Load(path string) (*Config, error) {
 		CAFile:                 raw.Security.MTLS.CAFile,
 		CertFile:               raw.Security.MTLS.CertFile,
 		KeyFile:                raw.Security.MTLS.KeyFile,
+		CRLFile:                raw.Security.MTLS.CRLFile,
+		MaxConnections:         raw.Agent.Listen.MaxConnections,
 		HealthAllowAnonymous:   raw.Security.Health.AllowAnonymous,
 		AllowServiceOwnedFiles: raw.Security.AllowServiceOwnedFiles,
 		Actions:                raw.Actions,
@@ -296,6 +329,11 @@ func Load(path string) (*Config, error) {
 		MaxJobHistory:          raw.Jobs.MaxHistory,
 		MaxConcurrentJobs:      raw.Jobs.MaxConcurrent,
 		MaxTriggersPerMinute:   raw.Jobs.MaxTriggersPerMinute,
+		IdempotencyWindow:      raw.Jobs.IdempotencyWindow,
+		JobStatePath:           raw.Jobs.StatePath,
+	}
+	if cfg.IdempotencyWindow == 0 {
+		cfg.IdempotencyWindow = DefaultIdempotencyWindow
 	}
 	if cfg.AuditLogPath == "" {
 		cfg.AuditLogPath = defaultAuditLogPath()
@@ -343,6 +381,9 @@ func (c *Config) validate() error {
 	if c.ListenPort <= 0 || c.ListenPort > 65535 {
 		return fmt.Errorf("agent.listen.port must be between 1 and 65535, got %d", c.ListenPort)
 	}
+	if c.MaxConnections < 0 || c.MaxConnections > MaxConnectionsMax {
+		return fmt.Errorf("agent.listen.max_connections must be between 0 (no cap) and %d, got %d", MaxConnectionsMax, c.MaxConnections)
+	}
 
 	if c.CAFile == "" || c.CertFile == "" || c.KeyFile == "" {
 		return fmt.Errorf("security.mtls: ca_file, cert_file, and key_file are all required")
@@ -353,7 +394,16 @@ func (c *Config) validate() error {
 	if err := requireValidCertKeyPair(c.CertFile, c.KeyFile); err != nil {
 		return fmt.Errorf("security.mtls: %w", err)
 	}
-	for label, p := range map[string]string{"ca_file": c.CAFile, "cert_file": c.CertFile, "key_file": c.KeyFile} {
+	securedFiles := map[string]string{"ca_file": c.CAFile, "cert_file": c.CertFile, "key_file": c.KeyFile}
+	if c.CRLFile != "" {
+		// Editable by an untrusted user means a revoked certificate can be
+		// un-revoked, so it gets the same ownership checks as the CA.
+		if err := requireExistingFile(c.CRLFile); err != nil {
+			return fmt.Errorf("security.mtls.crl_file: %w", err)
+		}
+		securedFiles["crl_file"] = c.CRLFile
+	}
+	for label, p := range securedFiles {
 		if err := requireTrustedFile(p, label == "key_file", c.AllowServiceOwnedFiles); err != nil {
 			return fmt.Errorf("security.mtls.%s: %w", label, err)
 		}
@@ -375,6 +425,20 @@ func (c *Config) validate() error {
 	if err := requireSecureParentDir(c.AuditLogPath, true); err != nil {
 		return fmt.Errorf("audit.path: %w", err)
 	}
+	if c.JobStatePath != "" {
+		if !filepath.IsAbs(c.JobStatePath) {
+			return fmt.Errorf("jobs.state_path must be an absolute path, got %q", c.JobStatePath)
+		}
+		if c.JobStatePath == c.AuditLogPath {
+			return fmt.Errorf("jobs.state_path must not be the audit log")
+		}
+		// Like the audit log, the state file lives where the service account
+		// legitimately owns the directory, so service ownership is accepted
+		// there; group/world-writable is not.
+		if err := requireSecureParentDir(c.JobStatePath, true); err != nil {
+			return fmt.Errorf("jobs.state_path: %w", err)
+		}
+	}
 	if c.AuditSyslog && !syslogSupported {
 		return fmt.Errorf("audit.syslog is not supported on this platform")
 	}
@@ -389,6 +453,9 @@ func (c *Config) validate() error {
 		return fmt.Errorf("jobs.max_concurrent must be between %d and %d, got %d", MaxConcurrentJobsMin, MaxConcurrentJobsMax, c.MaxConcurrentJobs)
 	}
 
+	if c.IdempotencyWindow < MinIdempotencyWindow || c.IdempotencyWindow > MaxIdempotencyWindow {
+		return fmt.Errorf("jobs.idempotency_window must be between %s and %s, got %s", MinIdempotencyWindow, MaxIdempotencyWindow, c.IdempotencyWindow)
+	}
 	if c.MaxTriggersPerMinute < 0 || c.MaxTriggersPerMinute > MaxTriggersPerMinuteMax {
 		return fmt.Errorf("jobs.max_triggers_per_minute must be between 0 (no limit) and %d, got %d", MaxTriggersPerMinuteMax, c.MaxTriggersPerMinute)
 	}
@@ -566,7 +633,7 @@ func requireValidCertKeyPair(certPath, keyPath string) error {
 	}
 	// The key's own validity and its match against the certificate is
 	// verified by tls.LoadX509KeyPair when the TLS listener is built at
-	// startup (internal/auth.TLSConfig) — duplicating X.509/PKCS8 key
+	// startup (internal/auth.LoadMaterial) — duplicating X.509/PKCS8 key
 	// parsing here would just be two implementations of the same check.
 	if err := requireExistingFile(keyPath); err != nil {
 		return err

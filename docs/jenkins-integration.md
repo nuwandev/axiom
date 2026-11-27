@@ -197,7 +197,10 @@ webhook/callback mechanism and none is planned (see the project's
   `404` on job lookup — the job ID is wrong, the job belongs to a different
   client identity (status and logs are readable only by the certificate that
   triggered the job, so poll with the same credential), or Axiom has
-  restarted since the job ran (see [job history and restarts](#job_id-and-what-a-lost-connection-means) below).
+  restarted since the job ran and `jobs.state_path` is not set (see [job history and restarts](#job_id-and-what-a-lost-connection-means) below).
+  With `jobs.state_path` set, a job from before a restart still answers, but
+  its `/logs` return `410` (output is never kept), and a job that was running
+  at the restart is `cancelled` with an "interrupted: agent restarted" error.
 - `429` — the agent-wide limit of running jobs (`jobs.max_concurrent`) is
   reached and no job was created. Wait for `Retry-After` and retry; unlike a
   lost trigger response, this is safe to retry.
@@ -218,11 +221,39 @@ result. Design your pipeline around this: on any doubt about whether a
 trigger request actually landed, check the audit trail or (if you kept a
 `job_id`) poll it, rather than assuming failure and re-triggering blind.
 
-There is no distributed job-coordination or idempotency-key mechanism —
-Axiom does not deduplicate identical trigger requests. If your trigger
-request's response was lost (connection dropped after Axiom accepted it
-but before Jenkins got the `202`), you genuinely cannot tell from that
-alone whether a job started. In that specific situation:
+**Send an `Idempotency-Key` header on every trigger you might retry.** If
+the response is lost (connection dropped after Axiom accepted the request but
+before Jenkins got the `202`), repeat the request with the same key. Axiom then
+returns the job the first request started (`202`, the same `job_id`, the
+current `status`, and an `Idempotent-Replay: true` header) and starts nothing.
+If the first request never arrived, the retry simply starts the job.
+
+```bash
+curl --cacert ca.crt --cert client.crt --key client.key \
+  -H 'Idempotency-Key: deploy-build-1423' \
+  -H 'Content-Type: application/json' \
+  -d '{"parameters":{"image_tag":"v1.4.2"}}' \
+  https://<host>:8443/v1/actions/your.deploy
+```
+
+Rules to design the pipeline around:
+- Use a key that is stable across retries of one logical trigger and different
+  for the next one, for example the build number. It is 1 to 128 characters
+  from `A-Z a-z 0-9 . _ : -`; anything else is a `400`.
+- A key belongs to your identity and one action. Reusing it with different
+  `parameters` is a `422`, never a silent return of the old job.
+- A request that is refused (`409` busy, `429`, `400` invalid parameter) does
+  not use up the key; retry it with the same key.
+- A replay is not charged to your trigger rate limit or the job cap.
+- Keys are remembered for `jobs.idempotency_window` (default 10 minutes). By
+  default they are in memory only, so after an Axiom restart the same key starts
+  a new job; with `jobs.state_path` set they survive a restart. After the window
+  the same key always starts a new job. If the job's record has aged out of the job history while
+  the key is still valid, the retry is a `409` that names the job, not a new
+  run.
+
+Without a key the old rules hold, because Axiom cannot tell a retry from a
+second trigger:
 - if the action is `concurrency: exclusive`, a blind retry gets a clean
   `409` if the first one actually did start — that's your signal;
 - if it's `concurrency: shared`, a blind retry could genuinely run twice.

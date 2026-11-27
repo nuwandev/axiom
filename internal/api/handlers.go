@@ -74,7 +74,7 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowed := s.cfg.Identities[identity.CommonName]
+	allowed := s.cfg.Load().Identities[identity.CommonName]
 	if !allowed.IsAllowed(action) {
 		if err := s.audit.Write(audit.Record{
 			Event:    audit.EventRejected,
@@ -126,9 +126,31 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	job, err := s.jobs.Trigger(r.Context(), action, identity.CommonName, req.Parameters)
+	key, ok := idempotencyKey(w, r)
+	if !ok {
+		return
+	}
+
+	var (
+		jobID    string
+		replayed bool
+		err      error
+	)
+	if key == "" {
+		var job *jobs.Job
+		if job, err = s.jobs.Trigger(r.Context(), action, identity.CommonName, req.Parameters); err == nil {
+			jobID = job.ID
+		}
+	} else {
+		jobID, replayed, err = s.jobs.TriggerIdempotent(r.Context(), action, identity.CommonName, key, req.Parameters)
+	}
 	if err != nil {
 		switch {
+		case errors.Is(err, jobs.ErrIdempotencyKeyReused):
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+		case errors.Is(err, jobs.ErrIdempotencyStoreFull):
+			w.Header().Set("Retry-After", "10")
+			writeError(w, http.StatusTooManyRequests, err.Error())
 		case errors.Is(err, jobs.ErrUnknownAction):
 			writeError(w, http.StatusNotFound, err.Error())
 		case errors.Is(err, jobs.ErrUnknownParameter), errors.Is(err, jobs.ErrInvalidParameter), errors.Is(err, jobs.ErrMissingParameter):
@@ -152,10 +174,47 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	status := jobs.StatusQueued
+	if replayed {
+		// The key was already used: nothing was started. Report the original
+		// job as it is now, not as "queued".
+		snap, found := s.jobs.Get(jobID)
+		if !found {
+			// The job aged out of the history while its key was still valid.
+			// Running the action again would defeat the key, so say so.
+			writeError(w, http.StatusConflict, "this idempotency key already started job "+jobID+", whose record is no longer retained")
+			return
+		}
+		status = snap.Status
+		w.Header().Set("Idempotent-Replay", "true")
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{
-		"job_id": job.ID,
-		"status": string(jobs.StatusQueued),
+		"job_id": jobID,
+		"status": string(status),
 	})
+}
+
+// idempotencyKeyPattern bounds the key to a small, safe charset: it is
+// client-controlled and used as a map key and in logs.
+var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// idempotencyKey returns the request's Idempotency-Key, or "" when it has
+// none. A malformed or repeated header is a 400 rather than being ignored:
+// ignoring it would let the client believe it had retry protection it does
+// not have. On failure it has already written the response.
+func idempotencyKey(w http.ResponseWriter, r *http.Request) (string, bool) {
+	values := r.Header.Values("Idempotency-Key")
+	switch {
+	case len(values) == 0:
+		return "", true
+	case len(values) > 1:
+		writeError(w, http.StatusBadRequest, "Idempotency-Key must be given once")
+		return "", false
+	case !idempotencyKeyPattern.MatchString(values[0]):
+		writeError(w, http.StatusBadRequest, "Idempotency-Key must be 1-128 characters from A-Z a-z 0-9 . _ : -")
+		return "", false
+	}
+	return values[0], true
 }
 
 // ownedJob resolves {job_id} for the authenticated caller. A job is visible
@@ -232,6 +291,13 @@ func (s *Server) handleGetJobLogs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if s.jobs.Restored(snap.ID) {
+		// The status survived a restart, the output did not: it was never
+		// written to disk. 410 says the logs existed and are gone, which a
+		// 404 ("no such job") would not.
+		writeError(w, http.StatusGone, "output is not retained across an agent restart")
+		return
+	}
 	stdout, stderr, stdoutTrunc, stderrTrunc, ok := s.jobs.Logs(snap.ID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "job not found")
@@ -256,7 +322,7 @@ type healthResponse struct {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{
 		Status:  "ok",
-		Agent:   s.cfg.AgentID,
+		Agent:   s.cfg.Load().AgentID,
 		Version: Version,
 	})
 }
