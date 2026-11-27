@@ -309,9 +309,11 @@ it already has the right ACL). Output is never written to it, so
 `GET /v1/jobs/{id}/logs` answers `410` for a job from before the restart, and
 a job that was running when the service stopped comes back `cancelled`; the
 behaviour is the same as on Linux, described in
-[`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior) §11. The state
-file's logic is covered by unit tests on Windows, but the full restart
-behaviour has only been exercised on Linux, not yet on a Windows host.
+[`INSTALL.md`](INSTALL.md#11-job-history-and-restart-behavior) §11. This was
+validated on Windows 11 Pro with the v2.3.0 code: after `Stop-Process -Force`
+on the running service, the service manager's recovery restarted it, the
+finished job kept its status, the job that was running came back `cancelled`,
+and its logs answered `410`.
 **`audit.log` is the durable execution record** either way — every accepted,
 started, finished (success/failure/timeout/cancelled), and rejected request
 is written there synchronously and survives restarts; if you need to know what

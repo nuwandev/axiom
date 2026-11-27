@@ -47,7 +47,8 @@ could be toggled.
   > **Central collector: authoritative audit record.**
 
   The Windows sink has been exercised by automated tests on a Windows runner
-  but not yet on a Windows Server host; confirm the path with
+  and as a real service on Windows 11 Pro, but not yet on a Windows Server
+  host; confirm the path with
   [`audit-validation.md`](audit-validation.md) before relying on it.
 - **Job visibility**: a job's status and logs are readable only by the
   identity that triggered it.
