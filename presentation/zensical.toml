@@ -4,7 +4,7 @@
 # See README.md in this directory for the full workflow.
 
 [project]
-site_name = "Axiom architecture"
+site_name = "Axiom mTLS agent architecture"
 site_description = "A source-verified architecture and engineering presentation of the Axiom automation agent, shown in an illustrative banking deployment."
 site_author = "Theekshana Nuwan"
 site_url = "https://nuwandev.github.io/axiom-mtls-agent/architecture/"
