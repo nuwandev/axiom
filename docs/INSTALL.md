@@ -124,10 +124,10 @@ systemd unit in one step, and gives you real upgrade/uninstall support
 (`dnf upgrade` / `dnf remove`) instead of a manual script:
 
 ```bash
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/axiom-2.2.0-1.x86_64.rpm
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.3.0/axiom-2.3.0-1.x86_64.rpm
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.3.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-sudo dnf install ./axiom-2.2.0-1.x86_64.rpm
+sudo dnf install ./axiom-2.3.0-1.x86_64.rpm
 ```
 
 (`aarch64` builds are published alongside the `x86_64` ones for arm64
@@ -157,21 +157,21 @@ a full checkout of this repository.
 
 ```bash
 # pick the asset matching your server's CPU
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/axiom-v2.2.0-linux-amd64
-curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.2.0/SHA256SUMS
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.3.0/axiom-v2.3.0-linux-amd64
+curl -LO https://github.com/nuwandev/axiom-mtls-agent/releases/download/v2.3.0/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-chmod +x axiom-v2.2.0-linux-amd64
+chmod +x axiom-v2.3.0-linux-amd64
 
 # the installer and systemd unit are small text files pulled directly from
 # the tagged release, not the whole repo
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/scripts/install.sh
-curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/packaging/axiom.service
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.3.0/scripts/install.sh
+curl -LO https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.3.0/packaging/axiom.service
 chmod +x install.sh
 
 # SYSTEMD_UNIT_SRC is required here: install.sh's default path assumes it's
 # still sitting inside the repo's scripts/ directory next to a sibling
 # packaging/ directory, which isn't true for a standalone download like this.
-sudo BIN_SRC=./axiom-v2.2.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
+sudo BIN_SRC=./axiom-v2.3.0-linux-amd64 SYSTEMD_UNIT_SRC=./axiom.service ./install.sh
 ```
 
 Always verify the checksum (`sha256sum -c`) before running anything you
@@ -260,7 +260,7 @@ which client identities may call which actions.
 sudo install -o root -g axiom -m 0640 configs/example.yaml /etc/axiom/config.yaml
 
 # or, on a server with no checkout (matches §4a):
-curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.2.0/configs/example.yaml
+curl -Lo config.yaml https://raw.githubusercontent.com/nuwandev/axiom-mtls-agent/v2.3.0/configs/example.yaml
 sudo install -o root -g axiom -m 0640 config.yaml /etc/axiom/config.yaml
 
 sudo vi /etc/axiom/config.yaml
@@ -273,7 +273,11 @@ Key fields, see the example file for the full annotated reference:
 - `security.mtls.*` — the three certificate paths from §5.
 - `security.health.allow_anonymous` — off by default; only set `true` if a
   network health check literally cannot present a client certificate.
-- `audit.path` — defaults to `/var/log/axiom/audit.log`.
+- `audit.path` — defaults to `/var/log/axiom/audit.log`. On Ubuntu,
+  `/var/log` is `root:syslog 0775` (group-writable), so Axiom refuses that
+  default at startup: members of `syslog` could replace the audit directory.
+  Set `audit.path: /var/lib/axiom/audit.log` there instead; the shipped unit
+  already allows writing to `/var/lib/axiom`.
 - `output.max_bytes` — per-stream captured-output cap, default 2 MiB.
 - `jobs.max_history` — in-memory job count retained for polling, default
   1000. Not durable unless `jobs.state_path` is set (see §11).
@@ -591,6 +595,12 @@ sudo cp /usr/local/bin/axiom.previous /usr/local/bin/axiom
 sudo systemctl start axiom
 ```
 
+Rolling back from v2.3.0 to v2.2.0 needs `audit.max_rejections_per_minute`
+removed from the configuration (v2.2.0 rejects unknown keys and will not
+start), and a `security.mtls.crl_file` that holds more than one CRL reduced to
+a single list: v2.2.0 reads only the first PEM block in the file and silently
+ignores the rest, so revocations in the other lists would stop applying.
+
 Rolling back from v2.2.0 to v2.1.0 also needs the configuration put back if
 it uses any of `security.mtls.crl_file`, `agent.listen.max_connections`,
 `jobs.idempotency_window` or `jobs.state_path`: v2.1.0 rejects unknown keys,
@@ -632,6 +642,8 @@ kept on disk by Axiom itself.
 | Symptom | Likely cause | Check |
 |---|---|---|
 | Service won't start, exits immediately | Config or security validation failure | `journalctl -u axiom -n 50` — the error names the exact field/path |
+| Service won't start: `audit.path: directory "/var/log" is group- or world-writable` | Ubuntu ships `/var/log` as `root:syslog 0775` | Set `audit.path: /var/lib/axiom/audit.log` (§6) |
+| `systemctl reload axiom` succeeded but nothing changed | The exit status only says the signal was sent; the reload itself was refused or failed | `journalctl -u axiom` (`configuration reload failed`) or the audit log (`reload_failed`) |
 | TLS handshake error (or `401` when anonymous health is enabled) on every request, including with a cert you expect to work | Client cert not signed by the CA in `security.mtls.ca_file`, missing the `clientAuth` extended key usage, or clock skew (cert not-yet-valid/expired) | `openssl verify -CAfile ca.crt -purpose sslclient client.crt` |
 | `404` on `GET /v1/jobs/{id}` for a job you just triggered | The poll used a different client identity than the trigger (job status and logs are owner-only), or Axiom restarted | Poll with the same certificate that triggered the job |
 | `429` on a trigger | The agent-wide limit of running jobs (`jobs.max_concurrent`, default 16) is reached | Retry after the `Retry-After` interval, or raise the limit |

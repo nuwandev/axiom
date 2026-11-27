@@ -30,6 +30,9 @@ type Server struct {
 	jobs     *jobs.Manager
 	audit    *audit.Logger
 	logger   *slog.Logger
+	// rejections caps rejected-request audit records; nil when
+	// audit.max_rejections_per_minute is 0. Restart-only, so never replaced.
+	rejections *rejectionLimiter
 }
 
 // NewServer builds a Server and loads its TLS material. The CA pool lives in
@@ -46,6 +49,8 @@ func NewServer(cfg *config.Config, jobMgr *jobs.Manager, auditLogger *audit.Logg
 		jobs:   jobMgr,
 		audit:  auditLogger,
 		logger: logger,
+
+		rejections: newRejectionLimiter(cfg.AuditMaxRejectionsPerMinute),
 	}
 	s.cfg.Store(cfg)
 	return s, nil

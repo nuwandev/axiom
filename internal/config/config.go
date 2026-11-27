@@ -53,6 +53,10 @@ const (
 	// default) leaves it off.
 	MaxTriggersPerMinuteMax = 10000
 
+	// MaxRejectionsPerMinuteMax bounds audit.max_rejections_per_minute; 0
+	// (the default) writes every rejection.
+	MaxRejectionsPerMinuteMax = 10000
+
 	// How long an Idempotency-Key is remembered after the request that
 	// first used it. A client retry arrives within seconds to minutes, so a
 	// short default keeps the store small.
@@ -217,6 +221,9 @@ type authorizationConfig struct {
 type auditConfig struct {
 	Path   string `yaml:"path"`
 	Syslog bool   `yaml:"syslog"`
+	// MaxRejectionsPerMinute caps rejected-request records per identity
+	// (all unauthenticated peers share one count); 0 means no cap.
+	MaxRejectionsPerMinute int `yaml:"max_rejections_per_minute"`
 }
 
 type outputConfig struct {
@@ -279,6 +286,10 @@ type Config struct {
 	// AuditSyslog forwards every audit record to journald/syslog in addition
 	// to the local file.
 	AuditSyslog bool
+	// AuditMaxRejectionsPerMinute caps how many rejected-request records one
+	// identity can cause per minute; past it they are counted and summarised
+	// instead of written one by one. 0 means every rejection is written.
+	AuditMaxRejectionsPerMinute int
 
 	MaxOutputBytes    int
 	MaxJobHistory     int
@@ -310,27 +321,28 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		AgentID:                raw.Agent.ID,
-		AgentName:              raw.Agent.Name,
-		ListenAddress:          raw.Agent.Listen.Address,
-		ListenPort:             raw.Agent.Listen.Port,
-		CAFile:                 raw.Security.MTLS.CAFile,
-		CertFile:               raw.Security.MTLS.CertFile,
-		KeyFile:                raw.Security.MTLS.KeyFile,
-		CRLFile:                raw.Security.MTLS.CRLFile,
-		MaxConnections:         raw.Agent.Listen.MaxConnections,
-		HealthAllowAnonymous:   raw.Security.Health.AllowAnonymous,
-		AllowServiceOwnedFiles: raw.Security.AllowServiceOwnedFiles,
-		Actions:                raw.Actions,
-		Identities:             raw.Authorization.Identities,
-		AuditLogPath:           raw.Audit.Path,
-		AuditSyslog:            raw.Audit.Syslog,
-		MaxOutputBytes:         raw.Output.MaxBytes,
-		MaxJobHistory:          raw.Jobs.MaxHistory,
-		MaxConcurrentJobs:      raw.Jobs.MaxConcurrent,
-		MaxTriggersPerMinute:   raw.Jobs.MaxTriggersPerMinute,
-		IdempotencyWindow:      raw.Jobs.IdempotencyWindow,
-		JobStatePath:           raw.Jobs.StatePath,
+		AgentID:                     raw.Agent.ID,
+		AgentName:                   raw.Agent.Name,
+		ListenAddress:               raw.Agent.Listen.Address,
+		ListenPort:                  raw.Agent.Listen.Port,
+		CAFile:                      raw.Security.MTLS.CAFile,
+		CertFile:                    raw.Security.MTLS.CertFile,
+		KeyFile:                     raw.Security.MTLS.KeyFile,
+		CRLFile:                     raw.Security.MTLS.CRLFile,
+		MaxConnections:              raw.Agent.Listen.MaxConnections,
+		HealthAllowAnonymous:        raw.Security.Health.AllowAnonymous,
+		AllowServiceOwnedFiles:      raw.Security.AllowServiceOwnedFiles,
+		Actions:                     raw.Actions,
+		Identities:                  raw.Authorization.Identities,
+		AuditLogPath:                raw.Audit.Path,
+		AuditSyslog:                 raw.Audit.Syslog,
+		AuditMaxRejectionsPerMinute: raw.Audit.MaxRejectionsPerMinute,
+		MaxOutputBytes:              raw.Output.MaxBytes,
+		MaxJobHistory:               raw.Jobs.MaxHistory,
+		MaxConcurrentJobs:           raw.Jobs.MaxConcurrent,
+		MaxTriggersPerMinute:        raw.Jobs.MaxTriggersPerMinute,
+		IdempotencyWindow:           raw.Jobs.IdempotencyWindow,
+		JobStatePath:                raw.Jobs.StatePath,
 	}
 	if cfg.IdempotencyWindow == 0 {
 		cfg.IdempotencyWindow = DefaultIdempotencyWindow
@@ -455,6 +467,9 @@ func (c *Config) validate() error {
 
 	if c.IdempotencyWindow < MinIdempotencyWindow || c.IdempotencyWindow > MaxIdempotencyWindow {
 		return fmt.Errorf("jobs.idempotency_window must be between %s and %s, got %s", MinIdempotencyWindow, MaxIdempotencyWindow, c.IdempotencyWindow)
+	}
+	if c.AuditMaxRejectionsPerMinute < 0 || c.AuditMaxRejectionsPerMinute > MaxRejectionsPerMinuteMax {
+		return fmt.Errorf("audit.max_rejections_per_minute must be between 0 (no cap) and %d, got %d", MaxRejectionsPerMinuteMax, c.AuditMaxRejectionsPerMinute)
 	}
 	if c.MaxTriggersPerMinute < 0 || c.MaxTriggersPerMinute > MaxTriggersPerMinuteMax {
 		return fmt.Errorf("jobs.max_triggers_per_minute must be between 0 (no limit) and %d, got %d", MaxTriggersPerMinuteMax, c.MaxTriggersPerMinute)

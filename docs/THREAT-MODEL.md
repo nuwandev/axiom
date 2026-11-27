@@ -86,7 +86,12 @@ identity → allowlist mapping (`config.Identity.IsAllowed`) with **default
 deny**: an identity absent from `authorization.identities`, or an action
 absent from that identity's list, is rejected (`403`) — there is no
 wildcard or implicit-allow path. Every rejection is written to the audit
-log (`audit.EventRejected`) with the identity and requested action.
+log (`audit.EventRejected`) with the identity and requested action; with
+`audit.max_rejections_per_minute` set, rejections past that cap are counted
+in a per-minute summary record instead of written one by one. The same
+default-deny applies to reading a job: the owner must still be allowed its
+action, so an identity removed or narrowed by a reload loses access to its
+earlier jobs' status and output too.
 **Blast radius:** none beyond a visible rejected-request audit entry (useful
 for detecting a cert that should be revoked).
 **Residual risk:** Axiom checks revocation only against an operator-supplied
@@ -525,12 +530,16 @@ configure.
 - **Open connections:** `agent.listen.max_connections` (off by default) caps
   how many are open at once, handshakes included; failed handshakes are
   logged, not audited.
+- **Rejection records:** every rejected request writes and syncs an audit
+  record. `audit.max_rejections_per_minute` (off by default) caps those records
+  per identity, with all unauthenticated peers sharing one count; past it the
+  request is still refused and counted, and one summary record per minute
+  gives the count. The individual records of counted requests are not kept.
 - **Not bounded by Axiom:** the rate of new connections and TLS handshakes
-  from anyone who can reach the port, requests other than triggers (including requests from a
-  certificate with no allowlisted identity, each of which writes an audit
-  record), CPU, process count or file descriptors used
-  by action scripts, and audit writes (each request writes and syncs a
-  record). Contain these with network controls and systemd resource limits
+  from anyone who can reach the port, requests other than triggers (including
+  rejected requests, unless the rejection cap is set), CPU, process count or
+  file descriptors used by action scripts, and audit writes (each request
+  writes and syncs a record). Contain these with network controls and systemd resource limits
   (`TasksMax`, `MemoryMax`, `LimitNOFILE`, `CPUQuota`); the shipped unit does
   not set them because the right values depend on what the actions run.
 - **Orphans:** after a timeout or cancel Axiom kills the action's process

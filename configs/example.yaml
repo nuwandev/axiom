@@ -23,11 +23,17 @@ security:
   #                           # health check cannot present a client cert.
 
 audit:
-  path: /var/log/axiom/audit.log
+  path: /var/log/axiom/audit.log   # on Ubuntu use /var/lib/axiom/audit.log:
+                                   # /var/log is group-writable there (root:syslog
+                                   # 0775), so Axiom refuses it.
   # Also emit each record to journald/syslog. Forward that stream to a central
   # collector: the local file is writable by the account that runs actions.
   # (On Windows the same setting writes to the Application event log.)
   syslog: true
+  # max_rejections_per_minute: 30   # optional, off (0) by default: most 401/403
+  #                                 # records one identity may cause per minute
+  #                                 # (unauthenticated peers share one count);
+  #                                 # the rest are counted in a summary record.
 
 # Both optional; shown here at their built-in defaults.
 output:

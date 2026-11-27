@@ -93,6 +93,21 @@ func serveWithReload(ctx context.Context, cfg *config.Config, logger *slog.Logge
 
 	go reloadOnSignal(ctx, server, logger, reload, load)
 
+	// Summaries of rate-capped rejection records. The deferred flush runs once
+	// the HTTP server has stopped and before the audit log closes, so no
+	// counted rejection goes unrecorded on shutdown.
+	sweepCtx, stopSweep := context.WithCancel(ctx)
+	sweepDone := make(chan struct{})
+	go func() {
+		defer close(sweepDone)
+		server.RunRejectionSummaries(sweepCtx)
+	}()
+	defer func() {
+		stopSweep()
+		<-sweepDone
+		server.FlushRejectionSummaries()
+	}()
+
 	tlsConfig, err := server.TLSConfig()
 	if err != nil {
 		return fmt.Errorf("building TLS config: %w", err)

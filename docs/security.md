@@ -34,7 +34,9 @@ could be toggled.
   capped (`jobs.max_concurrent`) and, if configured, so is each identity's
   trigger rate (`jobs.max_triggers_per_minute`).
 - **Audit**: every accepted, started, finished, and rejected request is
-  written synchronously to a local log and, with `audit.syslog: true`, also
+  written synchronously to a local log (past the optional
+  `audit.max_rejections_per_minute`, rejections are counted in a per-minute
+  summary record instead) and, with `audit.syslog: true`, also
   emitted to the system log (journald/syslog on Linux, the Application event
   log on Windows), with values that look like secrets redacted.
   The local file is owned by the account that runs actions and is not

@@ -707,6 +707,28 @@ func TestLoad_MaxTriggersPerMinuteBounds(t *testing.T) {
 	}
 }
 
+func TestLoad_MaxRejectionsPerMinuteBounds(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		wantErr bool
+	}{{"0", false /* 0 = no cap */}, {"1", false}, {"10000", false}, {"-1", true}, {"10001", true}} {
+		dir := t.TempDir()
+		script := writeFixture(t, dir, "deploy.sh", "#!/bin/sh\n", 0o750)
+		ca := writeFixture(t, dir, "ca.crt", testCertPEM, 0o640)
+		cert := writeFixture(t, dir, "server.crt", testCertPEM, 0o640)
+		key := writeFixture(t, dir, "server.key", testKeyPEM, 0o600)
+		content := baseYAML(dir, script, ca, cert, key) + "\naudit:\n  path: " + filepath.Join(dir, "audit.log") +
+			"\n  max_rejections_per_minute: " + tc.value + "\n"
+		cfg, err := Load(writeFixture(t, dir, "config.yaml", content, 0o640))
+		if (err != nil) != tc.wantErr {
+			t.Errorf("max_rejections_per_minute=%s: err = %v, wantErr %v", tc.value, err, tc.wantErr)
+		}
+		if err == nil && cfg.AuditMaxRejectionsPerMinute != atoiOrZero(tc.value) {
+			t.Errorf("max_rejections_per_minute=%s: loaded %d", tc.value, cfg.AuditMaxRejectionsPerMinute)
+		}
+	}
+}
+
 func atoiOrZero(s string) int {
 	n := 0
 	for _, r := range s {

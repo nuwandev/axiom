@@ -37,6 +37,10 @@ audit:
   # registered by the installer). Forward that log to a central collector: the
   # local file is writable by the account that runs actions.
   # syslog: true
+  # max_rejections_per_minute: 30   # optional, off (0) by default: most 401/403
+  #                                 # records one identity may cause per minute
+  #                                 # (unauthenticated peers share one count);
+  #                                 # the rest are counted in a summary record.
 
 # Both optional; shown here at their built-in defaults.
 output:
