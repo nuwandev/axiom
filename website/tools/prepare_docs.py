@@ -20,8 +20,8 @@ REPO = "https://github.com/nuwandev/axiom-mtls-agent"
 PAGES = {
     "README.md": (
         "index.md",
-        "Axiom: mTLS server automation agent, an SSH alternative for CI/CD",
-        "Axiom is an open source Go agent that lets CI/CD trigger predefined deploy and restart actions on Linux and Windows servers over mutual TLS, without SSH.",
+        "Server automation over mutual TLS, an SSH alternative for CI/CD",
+        "The Axiom mTLS agent is an open source Go agent that lets CI/CD trigger predefined deploy and restart actions on Linux and Windows servers over mutual TLS, without SSH.",
     ),
     "docs/getting-started.md": (
         "getting-started.md",

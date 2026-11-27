@@ -5,8 +5,8 @@
 #   cd website && zensical build -f zensical.toml
 
 [project]
-site_name = "Axiom"
-site_description = "Axiom is an open source mTLS automation agent for Linux and Windows servers: trigger predefined deploy actions from CI/CD without SSH."
+site_name = "Axiom mTLS agent"
+site_description = "The Axiom mTLS agent is an open source server automation agent for Linux and Windows: trigger predefined deploy actions from CI/CD over mutual TLS, without SSH."
 site_author = "Theekshana Nuwan"
 site_url = "https://nuwandev.github.io/axiom-mtls-agent/"
 repo_url = "https://github.com/nuwandev/axiom-mtls-agent"
