@@ -10,8 +10,8 @@ rows = [
     ("Service identity",
      ("dedicated axiom system user, no login shell, home /var/lib/axiom", "CapabilityBoundingSet empty, NoNewPrivileges=true", "preinstall.sh, packaging/axiom.service"),
      ("virtual account NT SERVICE\\axiom, no password", "not Administrators or SYSTEM; holds SeImpersonatePrivilege", "service_windows.go, validation report"), None),
-    ("File integrity at startup",
-     ("root-owned, no group or world write, no symlinks, every ancestor", "private key at most 0640; otherwise Axiom refuses to start", "config/script_security_unix.go"),
+    ("File integrity, startup and reload",
+     ("root-owned, no group or world write, no symlinks, every ancestor", "private key at most 0640; otherwise start or reload is refused", "config/script_security_unix.go"),
      ("owner Administrators / SYSTEM / TrustedInstaller; no write DACL", "to anyone else, service account included; reparse points refused", "internal/winsec/winsec_windows.go"), None),
     ("How a script is launched",
      ("direct exec of the configured script, never through a shell", "no argument or executable field exists in the Spec", "executor/launch_unix.go"),
@@ -30,7 +30,7 @@ rows = [
      ("NTFS ACLs: service reads and executes binary and scripts,", "reads config and certs; modify only on logs\\ and its own temp", "packaging/windows/README.md"), None),
     ("Audit storage",
      ("audit.log (JSONL, fsync) plus optional journald / syslog sink", "the central collector is the authoritative copy", "audit/syslog_unix.go"),
-     ("audit.log (JSONL, fsync) plus optional Application event log sink", "events 101 to 104; the collector is the authoritative copy", "audit/eventlog_windows.go"), None),
+     ("audit.log (JSONL, fsync) plus optional Application event log sink", "events 101 to 106; the collector is the authoritative copy", "audit/eventlog_windows.go"), None),
     ("Packaging and trust",
      ("RPM (nfpm) and install.sh; RPMs and SHA256SUMS GPG-signed", "SELinux enforcing validated on one Rocky Linux 9.8 host", "packaging/rpm, scripts/sign-release.sh"),
      ("MSI (WiX) or zip with Install-Axiom.ps1; SHA256SUMS signed", "binaries and MSI are not Authenticode-signed", "packaging/windows, README.md"), "w"),
@@ -40,7 +40,7 @@ ROW0, STRIDE, RH = 92, 90, 82
 H = ROW0 + STRIDE * len(rows) + 20
 s = Svg("plat", W, H, "Linux and Windows implementations side by side",
         "Ten implementation concerns compared for the Linux (systemd) and Windows (service) builds, each with its source reference. "
-        "Windows has no forwarded audit sink and unsigned binaries.")
+        "The only concern where Windows trails Linux is binary signing: the exe and MSI are not Authenticode-signed.")
 
 LX, LW = 236, 538
 WX, WW = 790, 530

@@ -51,7 +51,7 @@ s.lines(1086, 226, [("Linux: syslog sink", "ax-tb"), ("facility AUTH, tag axiom-
                      ("journald, then the bank's forwarder,", "ax-t"), ("then the central collector: the", "ax-t"),
                      ("authoritative, tamper-resistant copy", "ax-t")], 19)
 s.rect(1070, 370, 490, 100, "ax-box ax-box-aud", 8)
-s.lines(1086, 396, [("Windows: Event Log sink", "ax-tb"), ("Application log, source axiom, IDs 101-104", "ax-tm"),
+s.lines(1086, 396, [("Windows: Event Log sink", "ax-tb"), ("Application log, source axiom, IDs 101-106", "ax-tm"),
                      ("same fail-closed rules as Linux", "ax-t")], 19)
 s.path("M1010,358 H1030 V118 H1070", "ax-l-data", "data")
 s.path("M1010,410 H1050 V275 H1070", "ax-l-aud", "aud")

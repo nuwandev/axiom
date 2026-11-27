@@ -7,7 +7,7 @@
 <text x="806" y="116" class="ax-ts">HTTPS, mutual TLS</text>
 <rect x="20" y="60" width="540" height="560" rx="10" class="ax-zone"/>
 <text x="40" y="86" class="ax-th">READ-ONLY TO THE SERVICE ACCOUNT</text>
-<text x="40" y="102" class="ax-ts">checked at startup: the agent refuses to start otherwise</text>
+<text x="40" y="102" class="ax-ts">checked at startup and reload: refused otherwise</text>
 <rect x="40" y="118" width="500" height="108" rx="8" class="ax-box"/>
 <text x="56" y="144" class="ax-tb">Binary</text>
 <text x="56" y="170" class="ax-ts">Linux</text>

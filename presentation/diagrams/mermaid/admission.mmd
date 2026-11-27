@@ -1,8 +1,12 @@
 flowchart TD
     accTitle: Job admission control
-    accDescr: Trigger rate limit, parameter validation, exclusive lock, shutdown check, slot cap and the accepted audit write that gate a trigger.
-    A["Trigger with action, identity, params"] --> R{{"Identity under its trigger rate limit? (only if configured)"}}
-    R -- "no" --> E0["429 with Retry-After"]
+    accDescr: Idempotency-key replay, trigger rate limit, parameter validation, exclusive lock, shutdown check, slot cap and the accepted audit write that gate a trigger.
+    A["Trigger with action, identity, params"] --> K{{"Idempotency-Key already used within the window? (only if sent)"}}
+    K -- "no" --> R{{"Identity under its trigger rate limit? (only if configured)"}}
+    K --> P{{"Key seen before: same parameters as the first request?"}}
+    P --> E6["Same: 202 with the original job, nothing started"]
+    P --> E7["Different: 422"]
+    R --> E0["Over the limit: 429 with Retry-After"]
     R -- "yes" --> B{{"Parameters declared and matching patterns?"}}
     B -- "no" --> E1["400"]
     B -- "yes" --> C{{"Action is exclusive?"}}
