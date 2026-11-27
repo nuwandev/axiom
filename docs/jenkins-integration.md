@@ -201,6 +201,8 @@ webhook/callback mechanism and none is planned (see the project's
   With `jobs.state_path` set, a job from before a restart still answers, but
   its `/logs` return `410` (output is never kept), and a job that was running
   at the restart is `cancelled` with an "interrupted: agent restarted" error.
+- `403` on job lookup — the job is yours, but your identity is no longer
+  allowed its action (the agent's allowlist changed since you triggered it).
 - `429` — the agent-wide limit of running jobs (`jobs.max_concurrent`) is
   reached and no job was created. Wait for `Retry-After` and retry; unlike a
   lost trigger response, this is safe to retry.

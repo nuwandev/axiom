@@ -273,7 +273,11 @@ Key fields, see the example file for the full annotated reference:
 - `security.mtls.*` — the three certificate paths from §5.
 - `security.health.allow_anonymous` — off by default; only set `true` if a
   network health check literally cannot present a client certificate.
-- `audit.path` — defaults to `/var/log/axiom/audit.log`.
+- `audit.path` — defaults to `/var/log/axiom/audit.log`. On Ubuntu,
+  `/var/log` is `root:syslog 0775` (group-writable), so Axiom refuses that
+  default at startup: members of `syslog` could replace the audit directory.
+  Set `audit.path: /var/lib/axiom/audit.log` there instead; the shipped unit
+  already allows writing to `/var/lib/axiom`.
 - `output.max_bytes` — per-stream captured-output cap, default 2 MiB.
 - `jobs.max_history` — in-memory job count retained for polling, default
   1000. Not durable unless `jobs.state_path` is set (see §11).
@@ -632,6 +636,8 @@ kept on disk by Axiom itself.
 | Symptom | Likely cause | Check |
 |---|---|---|
 | Service won't start, exits immediately | Config or security validation failure | `journalctl -u axiom -n 50` — the error names the exact field/path |
+| Service won't start: `audit.path: directory "/var/log" is group- or world-writable` | Ubuntu ships `/var/log` as `root:syslog 0775` | Set `audit.path: /var/lib/axiom/audit.log` (§6) |
+| `systemctl reload axiom` succeeded but nothing changed | The exit status only says the signal was sent; the reload itself was refused or failed | `journalctl -u axiom` (`configuration reload failed`) or the audit log (`reload_failed`) |
 | TLS handshake error (or `401` when anonymous health is enabled) on every request, including with a cert you expect to work | Client cert not signed by the CA in `security.mtls.ca_file`, missing the `clientAuth` extended key usage, or clock skew (cert not-yet-valid/expired) | `openssl verify -CAfile ca.crt -purpose sslclient client.crt` |
 | `404` on `GET /v1/jobs/{id}` for a job you just triggered | The poll used a different client identity than the trigger (job status and logs are owner-only), or Axiom restarted | Poll with the same certificate that triggered the job |
 | `429` on a trigger | The agent-wide limit of running jobs (`jobs.max_concurrent`, default 16) is reached | Retry after the `Retry-After` interval, or raise the limit |

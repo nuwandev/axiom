@@ -46,13 +46,11 @@ func (s *Server) withIdentity(next http.Handler) http.Handler {
 }
 
 func (s *Server) rejectUnauthenticated(w http.ResponseWriter, r *http.Request, reason string) {
-	if err := s.audit.Write(audit.Record{
+	s.writeRejection(audit.Record{
 		Event:  audit.EventRejected,
 		Action: r.URL.Path,
 		Reason: "unauthenticated: " + reason,
-	}); err != nil {
-		s.logger.Error("audit write failed for rejected request", "error", err)
-	}
+	})
 	writeError(w, http.StatusUnauthorized, "unauthenticated")
 }
 

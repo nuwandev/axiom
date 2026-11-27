@@ -8,6 +8,51 @@ backward-compatible additions bump minor; fixes bump patch.
 
 ## [Unreleased]
 
+### Added
+- **Rejection record cap.** Optional `audit.max_rejections_per_minute`
+  (0-10000, default 0 = off). Every rejected request (`401`, `403`) writes and
+  syncs an audit record, so a client that keeps being rejected costs a synced
+  write each time. With the cap set, past that many records per identity per
+  minute (all unauthenticated peers share one count) the request is still
+  refused but its record is counted, and one `rejected` summary record per
+  window gives the count, the source and the period. Summaries are written
+  when the window ends (checked every 10 seconds) and at shutdown. The
+  individual records of counted requests are not kept. Other audit events are
+  never capped. Restart-only.
+
+### Changed
+- **Job reads follow the allowlist.** `GET /v1/jobs/{id}` and `/logs` now also
+  require the owner to still be allowed the job's action. After a reload removes
+  an identity, or takes an action away from it, its certificate gets `403` (and
+  an audit `rejected` record) for those jobs instead of their status and output.
+  Unknown jobs and other identities' jobs are still `404`.
+- **CRL checks the whole chain.** Every certificate in every verified client
+  chain is checked, intermediates and the anchor included, so revoking an
+  intermediate CA in its parent's list refuses everything it issued.
+  `security.mtls.crl_file` may hold several PEM `X509 CRL` blocks, one per
+  issuing CA; each must be signed by a CA in `ca_file`, two lists from the same
+  issuer are refused, a non-CRL block is an error, and the earliest
+  `nextUpdate` governs when the file goes stale. A single-list file behaves as
+  before.
+- **Ubuntu: default audit path documented as refused.** Ubuntu ships `/var/log`
+  as `root:syslog 0775`, so Axiom's ownership check refuses the default
+  `audit.path` (members of `syslog` could replace the audit directory). The
+  check is unchanged; the install guide, example config and README now say to
+  set `audit.path: /var/lib/axiom/audit.log` there. Found while validating the
+  unit on Ubuntu 24.04.
+- `systemctl reload` and `sc.exe control ... paramchange` only report that the
+  signal was delivered; the docs now say to read the outcome from the audit or
+  service log.
+
+### Validated
+- The shipped systemd unit on Ubuntu 24.04 (WSL2, real systemd), installed with
+  `scripts/install.sh`: `systemctl reload axiom` applied a new identity with the
+  same main PID while an exclusive job kept running and later succeeded; a
+  restart-only change was refused (`reload_failed` audited) and the service kept
+  running; after `systemctl kill -s KILL`, `Restart=on-failure` restarted it and
+  `jobs.state_path` restored the finished job, marked the running one
+  `cancelled` (interrupted), and answered `410` for its logs.
+
 ## [2.2.0] — 2026-11-26
 
 Minor release. Every new setting is optional and off by default (the

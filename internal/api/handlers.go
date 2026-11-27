@@ -74,17 +74,8 @@ func (s *Server) handleTriggerAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowed := s.cfg.Load().Identities[identity.CommonName]
-	if !allowed.IsAllowed(action) {
-		if err := s.audit.Write(audit.Record{
-			Event:    audit.EventRejected,
-			Identity: identity.CommonName,
-			Action:   action,
-			Reason:   "unauthorized: action not allowlisted for identity",
-		}); err != nil {
-			s.logger.Error("audit write failed for rejected request", "error", err)
-		}
-		writeError(w, http.StatusForbidden, "action not permitted for this identity")
+	if !s.cfg.Load().Identities[identity.CommonName].IsAllowed(action) {
+		s.rejectUnauthorized(w, identity.CommonName, action, "unauthorized: action not allowlisted for identity")
 		return
 	}
 
@@ -219,7 +210,10 @@ func idempotencyKey(w http.ResponseWriter, r *http.Request) (string, bool) {
 
 // ownedJob resolves {job_id} for the authenticated caller. A job is visible
 // only to the identity that triggered it: any other caller, and any unknown
-// or malformed ID, gets the same 404 so job IDs cannot be probed. On failure
+// or malformed ID, gets the same 404 so job IDs cannot be probed. The owner
+// must also still be allowed the job's action: once an identity is removed,
+// or loses that action, by a reload, its certificate can no longer read the
+// job's status or output, which may hold what the script printed. On failure
 // it has already written the response and returns ok=false.
 func (s *Server) ownedJob(w http.ResponseWriter, r *http.Request) (jobs.Snapshot, bool) {
 	identity := identityFromContext(r.Context())
@@ -238,7 +232,23 @@ func (s *Server) ownedJob(w http.ResponseWriter, r *http.Request) (jobs.Snapshot
 		writeError(w, http.StatusNotFound, "job not found")
 		return jobs.Snapshot{}, false
 	}
+	if !s.cfg.Load().Identities[identity.CommonName].IsAllowed(snap.Action) {
+		s.rejectUnauthorized(w, identity.CommonName, snap.Action, "unauthorized: job read for an action no longer allowlisted for identity")
+		return jobs.Snapshot{}, false
+	}
 	return snap, true
+}
+
+// rejectUnauthorized answers 403 for an authenticated identity that is not
+// allowed the action, and records the rejection.
+func (s *Server) rejectUnauthorized(w http.ResponseWriter, identity, action, reason string) {
+	s.writeRejection(audit.Record{
+		Event:    audit.EventRejected,
+		Identity: identity,
+		Action:   action,
+		Reason:   reason,
+	})
+	writeError(w, http.StatusForbidden, "action not permitted for this identity")
 }
 
 type jobResponse struct {

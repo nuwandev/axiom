@@ -55,6 +55,10 @@ as one step.
   cannot gate the reload: if that write fails, the reload stands and the
   failure is logged as an error.
 
+`systemctl reload` and `sc.exe control` report only that the signal was
+delivered, not whether Axiom applied it: check the audit log or service log
+for the outcome.
+
 Console runs on Windows (`axiom.exe` outside the service) have no reload
 trigger.
 
@@ -157,9 +161,9 @@ from the next request, even on open connections. Either way:
    `authorization.identities` (or just the actions it must not run) in
    `/etc/axiom/config.yaml`, then `systemctl reload axiom`
    (`sc.exe control axiom paramchange` on Windows). Running jobs are not
-   cancelled. This stops new triggers only: until the certificate expires or
-   is revoked, it can still read the status and output of jobs it already
-   started. If the reload is refused or fails, the log says why and the old
+   cancelled. From the next request the certificate can neither trigger
+   those actions nor read the status or output of jobs it ran for them
+   (`403`). If the reload is refused or fails, the log says why and the old
    authorization stays in force, so check the log and, if the file also
    contains restart-only changes, restart instead (`systemctl restart axiom`
    or `Restart-Service axiom`), which cancels running jobs.
@@ -194,5 +198,6 @@ from the next request, even on open connections. Either way:
 - `security.health.allow_anonymous` is `false` by default. If enabled, the
   TLS layer accepts any peer and only `/health` is served without a verified
   certificate; requests from an unauthenticated peer to any other route are
-  rejected and each one writes an audit record, so leave it off unless a
-  monitor truly cannot present a certificate.
+  rejected and each one writes an audit record (capped by
+  `audit.max_rejections_per_minute` if set), so leave it off unless a monitor
+  truly cannot present a certificate.

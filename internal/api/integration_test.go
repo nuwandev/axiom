@@ -57,6 +57,8 @@ type testEnvOptions struct {
 	maxConcurrent int
 	// maxTriggersPerMinute sets jobs.max_triggers_per_minute (0 = no limit).
 	maxTriggersPerMinute int
+	// maxRejectionsPerMinute sets audit.max_rejections_per_minute (0 = no cap).
+	maxRejectionsPerMinute int
 	// slowAction adds "slow.action" (sleeps 5s), allowed for ci-jenkins.
 	slowAction bool
 	// unlistedAction adds "frontend.deploy", which no identity may run.
@@ -138,6 +140,9 @@ authorization:
 ` + identityExtra
 	auditPath := filepath.Join(dir, "audit.log")
 	yamlContent += "\naudit:\n  path: " + auditPath + "\n"
+	if opts.maxRejectionsPerMinute > 0 {
+		yamlContent += fmt.Sprintf("  max_rejections_per_minute: %d\n", opts.maxRejectionsPerMinute)
+	}
 	if opts.maxConcurrent > 0 || opts.maxTriggersPerMinute > 0 {
 		yamlContent += "\njobs:\n"
 		if opts.maxConcurrent > 0 {

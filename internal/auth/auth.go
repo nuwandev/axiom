@@ -90,11 +90,11 @@ func (s *TLSState) Replace(m *Material) { s.material.Store(m) }
 // request, so a revocation or a rotated CA applies to open connections too.
 func (s *TLSState) Verify(peerCerts []*x509.Certificate) (*Identity, error) {
 	m := s.material.Load()
-	id, err := Verify(peerCerts, m.caPool)
+	id, chains, err := verifyChains(peerCerts, m.caPool)
 	if err != nil {
 		return nil, err
 	}
-	if err := m.crl.check(peerCerts[0], time.Now()); err != nil {
+	if err := m.crl.check(chains, time.Now()); err != nil {
 		return nil, err
 	}
 	return id, nil
@@ -165,8 +165,15 @@ type Identity struct {
 // rejected regardless of which route was requested. Revocation is not checked
 // here; TLSState.Verify adds it.
 func Verify(peerCerts []*x509.Certificate, caPool *x509.CertPool) (*Identity, error) {
+	id, _, err := verifyChains(peerCerts, caPool)
+	return id, err
+}
+
+// verifyChains is Verify that also returns every verified chain, leaf first,
+// so the revocation check can cover intermediates and anchors as well.
+func verifyChains(peerCerts []*x509.Certificate, caPool *x509.CertPool) (*Identity, [][]*x509.Certificate, error) {
 	if len(peerCerts) == 0 {
-		return nil, fmt.Errorf("no client certificate presented")
+		return nil, nil, fmt.Errorf("no client certificate presented")
 	}
 
 	leaf := peerCerts[0]
@@ -180,13 +187,14 @@ func Verify(peerCerts []*x509.Certificate, caPool *x509.CertPool) (*Identity, er
 		Intermediates: intermediates,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	if _, err := leaf.Verify(opts); err != nil {
-		return nil, fmt.Errorf("client certificate verification failed: %w", err)
+	chains, err := leaf.Verify(opts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("client certificate verification failed: %w", err)
 	}
 
 	if leaf.Subject.CommonName == "" {
-		return nil, fmt.Errorf("client certificate has no Common Name to use as identity")
+		return nil, nil, fmt.Errorf("client certificate has no Common Name to use as identity")
 	}
 
-	return &Identity{CommonName: leaf.Subject.CommonName}, nil
+	return &Identity{CommonName: leaf.Subject.CommonName}, chains, nil
 }

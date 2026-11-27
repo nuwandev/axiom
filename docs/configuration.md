@@ -62,21 +62,28 @@ AEAD suites on a 1.2 handshake (TLS 1.3 uses the standard library's fixed
 strong suite set).
 
 **Revocation list.** `security.mtls.crl_file` is optional. When set, a client
-certificate whose serial number is listed is refused with `401` and an audit
-`rejected` record, on every request, so a revocation also applies to
-connections that are already open. The file is a PEM or DER CRL that must be
-signed by a CA in `ca_file`, and it is held to the same ownership and
-directory rules as the CA file, because anyone who can edit it can un-revoke a
-certificate. Axiom reads it at startup and on reload
-([`certificates.md`](certificates.md#reload-after-renewal)); it never fetches
-it, and it does not do OCSP. Only the client certificate itself is checked, not
-intermediates in its chain.
+whose certificate chain contains a listed certificate is refused with `401`
+and an audit `rejected` record, on every request, so a revocation also applies
+to connections that are already open. Every certificate in every verified
+chain is checked: the client certificate, any intermediate, and the CA it
+chains to, so revoking an intermediate CA in its parent's list refuses
+everything that intermediate issued. The file is one DER CRL, or any number of
+PEM `X509 CRL` blocks (one per issuing CA, for example the root's list and an
+intermediate's). Each list must be signed by a CA in `ca_file`, two lists from
+the same issuer are refused, and a PEM file may hold nothing but CRLs. The
+file is held to the same ownership and directory rules as the CA file, because
+anyone who can edit it can un-revoke a certificate. Axiom reads it at startup
+and on reload ([`certificates.md`](certificates.md#reload-after-renewal)); it
+never fetches it, and it does not do OCSP. A certificate is checked only
+against the list of the CA that issued it, so a CA whose list is not in the
+file revokes nothing.
 
-The list is trusted only until its `nextUpdate` time. At startup or reload an
-already expired list is refused. If it expires while the agent runs, every
-client is refused until a fresh list is published and reloaded: after
-`nextUpdate` the list may be missing revocations, so Axiom fails closed
-rather than keep trusting it. Refresh the file and reload before then.
+The file is trusted only until the earliest `nextUpdate` of the lists in it.
+At startup or reload an already expired list is refused. If one expires while
+the agent runs, every client is refused until a fresh file is published and
+reloaded: after `nextUpdate` the list may be missing revocations, so Axiom
+fails closed rather than keep trusting it. Refresh the file and reload before
+then.
 
 ## Actions
 
@@ -205,7 +212,24 @@ record. See [`operations`](INSTALL.md#11-job-history-and-restart-behavior).
 audit:
   path: /var/log/axiom/audit.log   # optional, this is the default
   syslog: true                     # optional, default false; Linux and Windows
+  max_rejections_per_minute: 0     # optional, default 0 = no cap (0-10000)
 ```
+
+**Rejection record cap.** Every rejected request (`401` unauthenticated,
+`403` not allowlisted) writes and syncs an audit record, so a peer that keeps
+getting rejected costs a synced write per request. `audit.max_rejections_per_minute`
+caps how many of those records one identity can cause in a minute; every
+unauthenticated peer shares one count, since an unauthenticated peer can claim
+any name. Past the cap the request is still refused, but its record is counted
+instead of written. When the minute ends (checked every 10 seconds, and at
+shutdown) one `rejected` summary record states how many were counted, from
+whom and over which period, so the trail still shows that it happened and how
+often. It is off by default, so an upgrade writes every record as before; set
+it well above the rejections a misconfigured but legitimate client would cause.
+The trade-off is detail: while capped, the individual records (path, reason,
+action) of the counted requests are not kept. Other audit events are never
+capped. Rate-limited (`429`) triggers are not audited at all (see the trigger
+rate limit above). It is restart-only.
 
 `audit.syslog` additionally emits every audit record, as one JSON message, to
 the platform's system log. The setting keeps its name on both platforms:
