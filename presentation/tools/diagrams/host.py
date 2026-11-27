@@ -17,7 +17,7 @@ s.text(806, 116, "HTTPS, mutual TLS", "ax-ts")
 # ---- read-only zone -----------------------------------------------------------------
 s.rect(20, 60, 540, 560, "ax-zone", 10)
 s.text(40, 86, "READ-ONLY TO THE SERVICE ACCOUNT", "ax-th")
-s.text(40, 102, "checked at startup: the agent refuses to start otherwise", "ax-ts")
+s.text(40, 102, "checked at startup and reload: refused otherwise", "ax-ts")
 items = [
     ("Binary", "/usr/local/bin/axiom", "%ProgramFiles%\\Axiom\\axiom.exe", "static Go binary"),
     ("Configuration", "/etc/axiom/config.yaml", "%ProgramData%\\Axiom\\config.yaml", "identities reload; actions, limits: read once"),

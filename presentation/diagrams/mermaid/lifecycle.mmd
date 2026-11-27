@@ -13,8 +13,8 @@ sequenceDiagram
         T--xC: handshake fails, no audit record
     end
     T->>M: HTTP request over TLS
-    M->>M: auth.Verify: chain, EKU, validity, CN
-    alt fails (anonymous /health mode)
+    M->>M: TLSState.Verify: chain, EKU, validity, CRL, CN
+    alt fails (revoked, stale CRL, or no certificate in anonymous /health mode)
         M->>L: rejected: unauthenticated
         M-->>C: 401
     end
@@ -25,7 +25,11 @@ sequenceDiagram
         H-->>C: 403
     end
     H->>H: content type, size, JSON, caps
-    H->>J: Trigger(action, CN, params)
+    H->>J: Trigger(action, CN, params, optional Idempotency-Key)
+    alt key already used within the window
+        J-->>H: original job, nothing started (422 if params differ)
+        H-->>C: 202 job_id, Idempotent-Replay: true
+    end
     J->>J: schema, exclusive lock, slot
     alt 400, 409, 429 or 503
         J-->>H: error

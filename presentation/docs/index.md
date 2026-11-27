@@ -44,11 +44,11 @@ Everything that follows separates two things that are easy to blur in an archite
 | Axiom, implemented and source-verified | The bank, illustrative or customer-owned |
 |---|---|
 | mTLS listener, per-request certificate verification, Common Name identity | Jenkins, pipelines, the credential store |
-| Default-deny identity-to-action allowlist, owner-only job access | Firewalls, segmentation, WAF and load balancer |
+| Default-deny identity-to-action allowlist, owner-only job access, optional CRL check | Firewalls, segmentation, WAF and load balancer |
 | Fixed, validated execution: no shell, no arbitrary path | Web, application and database servers, and the application on them |
-| Timeouts, output caps, job and trigger-rate limits, process-tree containment | The action scripts: deploys, restarts, registry pulls |
+| Timeouts, output caps, job, trigger-rate and connection limits, process-tree containment | The action scripts: deploys, restarts, registry pulls |
 | JSONL audit with fsync, system-log sink (journald or Windows Event Log) | SIEM or collector, retention, forwarding from the host |
-| Startup integrity checks on config, certificates and scripts | PKI: issuing, rotating and revoking certificates |
+| Integrity checks on config, certificates and scripts, at startup and on every reload | PKI: issuing, rotating and revoking certificates, publishing the CRL |
 
 !!! note "The topology is an example"
     The banking layout in sections 2 and 3 is an illustrative deployment pattern. Axiom has no concept of tiers, banks, a fleet or a central controller. Each agent knows only its own configuration.
@@ -146,6 +146,7 @@ A host that Jenkins must act on runs its own agent, with its own configuration, 
     POST /v1/actions/your.deploy HTTP/1.1
     Host: app-01.internal.example:8443
     Content-Type: application/json
+    Idempotency-Key: deploy-build-1842
 
     {"parameters": {"image_tag": "build-1842"}}
     ```
@@ -156,6 +157,8 @@ A host that Jenkins must act on runs its own agent, with its own configuration, 
 
     {"job_id":"01J8ZQ4M6T3N7V2K9R5W0XDHBE","status":"queued"}
     ```
+
+    The `Idempotency-Key` header is optional. A retry with the same key within `jobs.idempotency_window` (default 10 minutes) returns this job with `Idempotent-Replay: true` and starts nothing.
 
 === "Poll"
 
@@ -220,18 +223,20 @@ A host that Jenkins must act on runs its own agent, with its own configuration, 
     | Code | Meaning | Source |
     |---|---|---|
     | 202 | Job accepted, returned before the script starts | `handleTriggerAction` |
-    | 400 | Bad action name, body, parameter name or value | `handlers.go`, `jobs.validateParameters` |
-    | 401 | No verified certificate (anonymous `/health` mode only) | `withIdentity` |
-    | 403 | Identity not allowlisted for this action, including names that do not exist | `handleTriggerAction` |
+    | 400 | Bad action name, body, parameter name or value, or a malformed or repeated `Idempotency-Key` | `handlers.go`, `jobs.validateParameters` |
+    | 401 | Certificate chain revoked by the CRL, or the CRL has passed its `nextUpdate`; with anonymous `/health`, also no or an unverifiable certificate | `withIdentity`, `TLSState.Verify` |
+    | 403 | Identity not allowlisted for this action, including names that do not exist; or a job read for an action the identity is no longer allowed | `handleTriggerAction`, `ownedJob` |
     | 404 | Job unknown, malformed, or owned by another identity | `ownedJob` |
-    | 409 | Exclusive action already running | `jobs.ErrActionBusy` |
+    | 409 | Exclusive action already running, or the job an `Idempotency-Key` started has left the history | `jobs.ErrActionBusy`, `handleTriggerAction` |
+    | 410 | Logs of a job restored from `jobs.state_path`: output is never kept across a restart | `handleGetJobLogs` |
     | 415 | Content type is not JSON | `handleTriggerAction` |
-    | 429 | Agent-wide job cap or this identity's trigger rate limit reached, with `Retry-After` | `jobs.ErrTooManyJobs`, `jobs.ErrRateLimited` |
+    | 422 | `Idempotency-Key` reused with different parameters | `jobs.ErrIdempotencyKeyReused` |
+    | 429 | Agent-wide job cap, this identity's trigger rate limit, or a full idempotency key store, with `Retry-After` | `jobs.ErrTooManyJobs`, `jobs.ErrRateLimited`, `jobs.ErrIdempotencyStoreFull` |
     | 503 | Agent is shutting down | `jobs.ErrShuttingDown` |
 
 ## 5. Internal architecture {#internals}
 
-One lifecycle function, `serve`, builds and wires everything. The unix and Windows entrypoints differ only in how they obtain a context and a configuration. Platform behaviour lives in build-tagged files behind small seams, so the request path is shared code on both operating systems.
+One lifecycle function, `serveWithReload`, builds and wires everything. The unix and Windows entrypoints differ only in how they obtain a context, a configuration and the reload signal (`SIGHUP`, or the service manager's `paramchange`). Platform behaviour lives in build-tagged files behind small seams, so the request path is shared code on both operating systems.
 
 <figure class="ax-fig" id="fig-internal" markdown>
 <div class="ax-scroll">
@@ -242,7 +247,7 @@ One lifecycle function, `serve`, builds and wires everything. The unix and Windo
 
 Implementation notes
 
-- **Fail before listening.** `config.Load` validates the whole file, then checks ownership and permissions of the config, CA, certificate, key, every script and each ancestor directory. A problem aborts startup.
+- **Fail before listening.** `config.Load` validates the whole file, then checks ownership and permissions of the config, CA, certificate, key, optional CRL, every script and each ancestor directory. A problem aborts startup. A reload runs the same `config.Load`, and a problem there changes nothing.
 - **The request cannot name what runs.** `executor.Spec` carries a script path, an environment, a timeout and an output cap. There is no field for an executable, an argument or inline source.
 - **Audit is part of admission.** The job manager holds the audit logger and will not create or start a job without writing its record.
 - **State is small and local.** Runtime state is the in-memory job store, guarded by explicit locks taken in a consistent order, and the audit file. An optional state file keeps job status and idempotency keys across restarts; it never holds output or parameter values.
@@ -263,7 +268,7 @@ Implementation notes
 
 1. **No input carries one.** The only variable in a trigger is the action name, used as a map key into configuration the operator wrote. Parameters are named, typed and matched against a regular expression, then passed as environment variables.
 2. **No shell is involved.** On unix the script is executed directly. On Windows the argument vector is fixed and only the configured script path varies; `-Command` and `-EncodedCommand` never appear, and a test asserts it (`executor_windows_test.go`).
-3. **The script is verified, not just named.** At startup each configured script must be an absolute, clean, non-symlink path, owned by root or Administrators, with no write access for the service account along its whole directory path.
+3. **The script is verified, not just named.** At startup and on every reload each configured script must be an absolute, clean, non-symlink path, owned by root or Administrators, with no write access for the service account along its whole directory path.
 4. **There is no such route.** `TestIntegration_NoArbitraryExecuteEndpoint` asserts an execute-shaped endpoint cannot succeed.
 
 ## 7. Authentication and authorization {#authn}
@@ -277,17 +282,17 @@ Implementation notes
 
 | Property | Behaviour | Source |
 |---|---|---|
-| Trust root | Only the CAs in `security.mtls.ca_file`; every certificate there is a trust anchor | `auth.TLSConfig`, `auth.Verify` |
-| TLS | Minimum 1.2; ECDHE with AEAD suites on 1.2; X25519 and P-256 | `auth.TLSConfig` |
+| Trust root | Only the CAs in `security.mtls.ca_file`; every certificate there is a trust anchor | `auth.TLSState`, `auth.Verify` |
+| TLS | Minimum 1.2; ECDHE with AEAD suites on 1.2; X25519 and P-256 | `TLSState.Config` |
 | Client verification | Chain to the pool, `clientAuth` extended key usage, current time, non-empty CN | `auth.Verify` |
-| Checked twice | At the handshake (default mode) and again on every request | `TLSConfig`, `withIdentity` |
+| Checked twice | At the handshake (default mode) and again on every request, against the CA and CRL current at that moment | `TLSState.Config`, `withIdentity` |
 | Identity | Leaf Common Name only; SANs are ignored | `auth.Identity` |
 | Authorization | Exact-string membership in a per-identity list; default deny | `config.Identity.IsAllowed` |
-| Job access | A job is visible only to the identity that triggered it | `ownedJob` |
-| Revocation | Optional CRL file, checked on every request; no OCSP | `auth.TLSState.Verify` |
+| Job access | A job is visible only to the identity that triggered it, and only while that identity is still allowed the job's action | `ownedJob` |
+| Revocation | Optional CRL file, one list per issuing CA, every certificate in the chain checked on every request; fails closed after `nextUpdate`; no OCSP | `auth.TLSState.Verify` |
 
 !!! warning "Identity is only as strong as certificate issuance"
-    Because identity is the Common Name, the bank's CA must never let a requester choose it. A stolen client certificate keeps working until it expires or its identity is removed from the configuration and the agent is reloaded or restarted. Short-lived, per-pipeline certificates are the available mitigation.
+    Because identity is the Common Name, the bank's CA must never let a requester choose it. A stolen client certificate keeps working until it expires, is listed in the CRL, or its identity is removed from the configuration; the last two take effect on the next reload. Short-lived, per-pipeline certificates and a published CRL are the mitigations.
 
 ## 8. Job execution {#jobs}
 
@@ -311,12 +316,14 @@ Implementation notes
 | Stop behaviour | Unix: SIGTERM to the group, 5 s grace, SIGKILL. Windows: immediate job termination | `executor.Run`, `TerminationGracePeriod` |
 | Agent-wide job cap | `jobs.max_concurrent`, default 16 | `config.DefaultMaxConcurrentJobs` |
 | Trigger rate per identity | `jobs.max_triggers_per_minute`, off by default; over it, 429 and no job | `Manager.Trigger`, `rateLimiter.allow` |
+| Open connections | `agent.listen.max_connections`, off by default; at the cap new clients wait in the listen backlog | `limitListener` |
+| Idempotency keys | Optional `Idempotency-Key` header, remembered for `jobs.idempotency_window` (default 10 min), at most 10,000 | `Manager.TriggerIdempotent` |
 | Retained history | `jobs.max_history`, default 1000; the oldest finished job is evicted first | `Manager.recordJob` |
 | Captured output | `output.max_bytes` per stream, default 2 MiB | `executor.cappedBuffer` |
 | Request caps | 64 KiB body, 64 parameters, 4096 bytes per value | `handlers.go` |
 
 Output and ownership
-:   Stdout and stderr are captured into capped in-memory buffers, truncated beyond the limit without throttling the process, and returned only to the identity that triggered the job. Output is never written to the audit trail.
+:   Stdout and stderr are captured into capped in-memory buffers, truncated beyond the limit without throttling the process, and returned only to the identity that triggered the job, while it is still allowed the job's action. Output is never written to the audit trail or the state file.
 
 Memory, not storage
 :   Job state is not persisted unless <code>jobs.state_path</code> is set. By default a restart, a crash or a host reboot clears it, and a caller polling an old job id receives 404. With the state file, status survives, output never does (its logs answer 410), and a job that was running at the restart comes back cancelled. The audit log is the durable record of what ran either way.
@@ -343,7 +350,9 @@ What the audit trail guarantees, and what it does not
 - Each write is flushed with `fsync` before the call returns, and any sink error is returned to the caller, which is what makes the accepted and started records fail closed.
 - Redaction is by parameter name (names containing `token`, `secret`, `pass`, `key`, `cert` and similar). A secret carried in a parameter with an innocent name would be written verbatim.
 - The local file is owned by the account that runs scripts, so that account can alter it. Tamper resistance comes from the collector, not the file.
-- Failed TLS handshakes never reach this log. `net/http` reports them to the structured service log at `WARN`, so failed-authentication monitoring means collecting that log or watching the network layer.
+- Failed TLS handshakes never reach this log, deliberately: an unauthenticated peer must not cause a synced write per attempt. `net/http` reports them to the structured service log at `WARN`, so failed-authentication monitoring means collecting that log or watching the network layer.
+- Every reload is recorded: `reloaded` with the identities it added, removed or changed, or `reload_failed` with the reason (Windows event IDs 105 and 106).
+- With `audit.max_rejections_per_minute` set, rejected requests past that cap per identity are still refused but counted, and one summary record per minute replaces their individual records. It is off by default, so every rejection is written.
 
 ## 10. Linux and Windows implementations {#platforms}
 
@@ -360,13 +369,13 @@ The external API, configuration schema, authentication and authorization are ide
 
 | Boundary | Enforced by | Source | What remains |
 |---|---|---|---|
-| Network to listener | Mutual TLS, one trust root | `auth.TLSState` | Revocation only through an operator-supplied CRL; only triggers can be rate limited, connections only capped |
-| Identity to action | Default-deny allowlist keyed by CN | `Identity.IsAllowed`, `handleTriggerAction` | Changes need a reload (`SIGHUP`) or restart; CN issuance is the CA's job |
+| Network to listener | Mutual TLS, one trust root, optional CRL over the whole chain | `auth.TLSState` | No OCSP; the rate of new connections and handshakes is not limited, only the number open |
+| Identity to action | Default-deny allowlist keyed by CN, changed by a live reload without a restart | `Identity.IsAllowed`, `handleTriggerAction`, `Server.Reload` | CN issuance is the CA's job |
 | Request to job manager | Schema, size, regex and parameter validation | `handlers.go`, `config.Parameter` | A script can still mishandle a validated value |
-| Job visibility | Owner-only status and logs | `ownedJob` | State is in memory unless `jobs.state_path` is set, and output never survives a restart |
+| Job visibility | Owner-only status and logs, and only while the owner is still allowed the action | `ownedJob` | Output never survives a restart; the state file is writable by the service account |
 | Axiom to script | No shell, fixed invocation, constructed environment, timeout, output cap, containment | `executor`, `jobs.buildEnv` | Axiom does not constrain what a script does |
-| Service account to its own files | Startup integrity checks, systemd or NTFS sandbox | `config/script_security_*`, `winsec`, `axiom.service` | Docker group access is root-equivalent; the Windows account holds `SeImpersonatePrivilege` |
-| Axiom to audit | Fail-closed accepted and started, fsync | `audit.Logger.Write` | Local file alterable; finished record best effort; Windows event-log entries are forgeable by the service account |
+| Service account to its own files | Integrity checks at startup and reload, systemd or NTFS sandbox | `config/script_security_*`, `winsec`, `axiom.service` | Docker group access is root-equivalent; the Windows account holds `SeImpersonatePrivilege` |
+| Axiom to audit | Fail-closed accepted and started, fsync, every reload recorded | `audit.Logger.Write`, `Server.ReloadFrom` | Local file alterable; finished record best effort; capped rejections keep only a count; Windows event-log entries are forgeable by the service account |
 | Release to host | GPG-signed RPMs and checksums, SBOM, provenance | `release.yml`, `sign-release.sh` | Windows binaries are not Authenticode-signed |
 
 ## 12. Failure handling and limitations {#limits}
@@ -383,20 +392,38 @@ The external API, configuration schema, authentication and authorization are ide
 | Graceful stop | New triggers get 503, HTTP drains up to 30 s, running jobs are cancelled and recorded as interrupted | `serve`, `Manager.Shutdown` |
 | Crash, SIGKILL or power loss | No finished record. The job's state is lost, or with `jobs.state_path` it returns cancelled as interrupted. The child is killed by Pdeathsig or the Job Object | `executor` containment, `Manager.EnableState` |
 | Trigger response lost | With an `Idempotency-Key`: the retry returns the original job and starts nothing. Without one: an exclusive action answers 409, a shared action may run twice | `Manager.TriggerIdempotent`, `docs/jenkins-integration.md` |
-| Certificate or identity change | Applied by a reload, without cancelling jobs; a failed or restart-only reload changes nothing and is logged | `docs/certificates.md` |
+| Certificate or identity change | Applied by a reload, without cancelling jobs; a failed or restart-only reload changes nothing, and either outcome is audited | `Server.ReloadFrom`, `docs/certificates.md` |
+| Revoked client certificate | Refused with 401 from the next request, open connections included; a CRL past its `nextUpdate` refuses every client until a fresh one is reloaded | `TLSState.Verify` |
+| Identity removed by a reload | Its triggers, and reads of the jobs it ran for the actions it lost, get 403 | `handleTriggerAction`, `ownedJob` |
+| Flood of rejected requests | Each one is refused; with `audit.max_rejections_per_minute` set, records past the cap are counted into one summary per minute | `rejectionLimiter` |
 
-### What Axiom does not do
+### Former gaps, now handled
+
+Each of these was a stated limitation before v2.2.0. Settings marked opt-in are off by default, so an upgrade changes no behaviour until they are set.
+
+| Former gap | Now | Setting | Since |
+|---|---|---|---|
+| No certificate revocation | CRL file checked on every request across the whole chain, one list per issuing CA, fail-closed when stale | `security.mtls.crl_file` (opt-in) | 2.2.0; whole chain and several lists in 2.3.0 |
+| A restart to change certificates or identities | Live reload on `SIGHUP` or `paramchange`: all or nothing, running jobs kept, every reload audited | always on | 2.2.0 |
+| Unbounded open connections | Cap counted from accept, so stalled handshakes use slots | `agent.listen.max_connections` (opt-in) | 2.2.0 |
+| A lost response could run a shared action twice | `Idempotency-Key` returns the original job and starts nothing | request header; `jobs.idempotency_window` | 2.2.0 |
+| Job status lost on restart | Status and idempotency keys kept; a job in flight at a crash returns cancelled | `jobs.state_path` (opt-in) | 2.2.0 |
+| Handshake failures only on unstructured stderr | Logged at `WARN` by the structured service log | always on | 2.2.0 |
+| A removed identity could still read its jobs | 403 once the identity is no longer allowed the job's action | always on | 2.3.0 |
+| Rejected requests could flood the audit log | Per-identity cap with a summary record per minute | `audit.max_rejections_per_minute` (opt-in) | 2.3.0 |
+
+### What Axiom still does not do
 
 <div class="ax-ledger">
-<div><b>Fetch revocation data</b><span>Axiom checks a CRL file you supply (<code>security.mtls.crl_file</code>, off by default), never fetches one and has no OCSP. The file may hold a list per issuing CA, and every certificate in the client's chain is checked, intermediates included. Without a list, a stolen client certificate keeps working until it expires or its identity is removed and the agent reloaded. A list past its <code>nextUpdate</code> makes every client fail until a fresh one is reloaded.<em>internal/auth/revocation.go</em></span></div>
-<div><b>Rate limit connections</b><span>Triggers can be limited per identity (<code>jobs.max_triggers_per_minute</code>) and open connections capped (<code>agent.listen.max_connections</code>); rejected-request audit records can be capped per identity (<code>audit.max_rejections_per_minute</code>); all three are off by default. The rate of new connections, TLS handshakes and other requests is not bounded, and every audit record costs a synced write. Contain with network controls and systemd resource limits.<em>internal/jobs/ratelimit.go, cmd/axiom/limitlistener.go, docs/THREAT-MODEL.md</em></span></div>
-<div><b>Stop an attacker replaying a request</b><span>A replayed request is indistinguishable from a repeated trigger. An optional <code>Idempotency-Key</code> makes a client's own retries safe, but an attacker can omit it. Exclusive actions answer 409 while running; shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
-<div><b>Reload everything live</b><span>Only identities, the certificate files and the CRL reload (<code>SIGHUP</code> on Linux, <code>paramchange</code> on Windows). Actions, listen address, limits and audit settings are read once; a reload that touches them is refused and a restart, which cancels running jobs, is required. Every reload is audited with the identities it added, removed or changed.<em>docs/certificates.md, internal/config/reload.go</em></span></div>
-<div><b>Persist job output</b><span>Output is never written to disk, so logs vanish on restart or crash. Job status survives only if <code>jobs.state_path</code> is set (off by default), in a file the service account can also write. The audit log is the durable record.<em>internal/jobs/persist.go, docs/INSTALL.md section 11</em></span></div>
-<div><b>Make Windows event-log entries tamper-proof</b><span>The Windows Event Log sink exists since v2.1.0, but its entries carry no sender attribute a script cannot also set, and the sink has not yet been run on a Windows Server host. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
-<div><b>Audit failed TLS handshakes</b><span>Handshake rejections never reach the audit log, deliberately: an unauthenticated peer must not cause a synced audit write per attempt. They are logged at <code>WARN</code> by the structured service log.<em>cmd/axiom/main.go, ErrorLog</em></span></div>
+<div><b>Fetch revocation data</b><span>No OCSP and no CRL download: Axiom makes no outbound connections. The operator publishes the CRL file and reloads before its <code>nextUpdate</code>; after that, every client is refused.<em>internal/auth/revocation.go</em></span></div>
+<div><b>Limit the rate of new connections</b><span>The number of open connections can be capped, but not how fast new connections and TLS handshakes arrive, and every audited request costs a synced write. Contain with network controls and systemd resource limits.<em>cmd/axiom/limitlistener.go, docs/THREAT-MODEL.md</em></span></div>
+<div><b>Tell an attacker's replay from a retry</b><span>An <code>Idempotency-Key</code> protects a client's own retries, but an attacker can omit it. A replayed request is indistinguishable from a repeated trigger; exclusive actions answer 409 while running, and shared actions should be idempotent.<em>docs/THREAT-MODEL.md, section 8</em></span></div>
+<div><b>Reload actions, the listener or limits</b><span>These are read once. A reload that touches them is refused and changes nothing; applying them needs a restart, which cancels running jobs.<em>internal/config/reload.go</em></span></div>
+<div><b>Keep script output</b><span>Output stays in memory and is gone after a restart, by design, since it may hold whatever a script printed. A restored job's logs answer 410; the audit log is the durable record.<em>internal/jobs/persist.go</em></span></div>
 <div><b>Restrict what a script does</b><span>Scripts may use the network and any resource the service account can reach. Axiom controls how a script is invoked, not its behaviour.<em>packaging/axiom.service, RestrictAddressFamilies</em></span></div>
+<div><b>Make Windows event-log entries tamper-proof</b><span>Entries carry no sender attribute a script cannot also set. Reconcile forwarded events with the local file.<em>internal/audit/eventlog_windows.go</em></span></div>
 <div><b>Sign Windows binaries</b><span>The exe and MSI are not Authenticode-signed. Checksums and the Linux RPMs are GPG-signed, and releases carry build provenance and an SBOM.<em>README.md known gaps, SECURITY.md, docs/verifying-downloads.md</em></span></div>
+<div><b>Claim validation it has not had</b><span>Not yet run: Windows service reload and crash recovery on a real host, the event-log sink on Windows Server, the Docker and Kubernetes success path, and third-party EDR. Ubuntu and Debian work but are outside the validated matrix; on Ubuntu, move <code>audit.path</code> off the group-writable <code>/var/log</code>.<em>README.md, supported platforms</em></span></div>
 </div>
 
-None of these is hidden to make the design look complete. They are the boundary of what the implementation claims, and each can be compensated for in the surrounding infrastructure: short-lived certificates, network segmentation, a central log collector, narrow allowlists and reviewed, idempotent scripts.
+Each of these is a stated boundary, not a hidden one, and each can be compensated for in the surrounding infrastructure: short-lived certificates and a published CRL, network segmentation, a central log collector, narrow allowlists and reviewed, idempotent scripts.

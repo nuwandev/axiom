@@ -5,6 +5,7 @@
 <text x="56" y="122" class="ax-tb">main_unix.go · run()</text>
 <text x="56" y="148" class="ax-t">flags, config.Load()</text>
 <text x="56" y="168" class="ax-t">SIGINT / SIGTERM → context</text>
+<text x="56" y="188" class="ax-t">SIGHUP → reload</text>
 <path d="M190,200 V214" class="ax-l-data"/>
 <rect x="360" y="96" width="300" height="104" rx="8" class="ax-box"/>
 <text x="376" y="122" class="ax-tb">main_windows.go · run()</text>
@@ -14,22 +15,23 @@
 <rect x="680" y="96" width="300" height="104" rx="8" class="ax-box"/>
 <text x="696" y="122" class="ax-tb">service_windows.go</text>
 <text x="696" y="148" class="ax-t">SCM: Execute(), Stop / Shutdown</text>
-<text x="696" y="168" class="ax-t">-install-service, recovery</text>
+<text x="696" y="168" class="ax-t">ParamChange → reload</text>
+<text x="696" y="188" class="ax-t">-install-service, recovery</text>
 <path d="M830,200 V214" class="ax-l-data"/>
 <path d="M190,214 H1010" class="ax-l-data" marker-end="url(#intl-m-data)"/>
 <rect x="1010" y="90" width="530" height="138" rx="8" class="ax-box ax-box-agent"/>
-<text x="1026" y="116" class="ax-tb">serve(ctx, cfg, logger)</text>
+<text x="1026" y="116" class="ax-tb">serveWithReload(ctx, cfg, logger, reload, load)</text>
 <text x="1026" y="134" class="ax-tm">cmd/axiom/main.go · one lifecycle, every entrypoint</text>
 <text x="1026" y="158" class="ax-t">CheckPlatformPrerequisites · audit.Open (+ sink)</text>
-<text x="1026" y="177" class="ax-t">jobs.NewManager · api.NewServer · tls.Listen</text>
-<text x="1026" y="196" class="ax-t">on stop: BeginShutdown → HTTP drain (30 s)</text>
+<text x="1026" y="177" class="ax-t">NewManager (+ state file) · NewServer · TLS listener</text>
+<text x="1026" y="196" class="ax-t">reload signal → ReloadFrom; stop: drain (30 s)</text>
 <text x="1026" y="215" class="ax-t">then Manager.Shutdown (20 s) → audit.Close</text>
 <path d="M1275,228 V262" class="ax-l-ctl" marker-end="url(#intl-m-ctl)"/>
 <rect x="20" y="262" width="1540" height="262" rx="10" class="ax-zone"/>
 <text x="40" y="288" class="ax-th">REQUEST PATH · internal/auth, internal/api, internal/jobs</text>
 <rect x="40" y="304" width="350" height="200" rx="8" class="ax-box ax-box-agent"/>
 <text x="56" y="330" class="ax-tb">TLS listener</text>
-<text x="56" y="349" class="ax-tm">internal/auth/auth.go · TLSConfig</text>
+<text x="56" y="349" class="ax-tm">internal/auth/auth.go · TLSState</text>
 <text x="56" y="374" class="ax-t">RequireAndVerifyClientCert</text>
 <text x="56" y="392" class="ax-t">(RequestClientCert only when /health</text>
 <text x="56" y="410" class="ax-t">is opted in as anonymous)</text>
@@ -38,8 +40,8 @@
 <rect x="420" y="304" width="350" height="200" rx="8" class="ax-box ax-box-agent"/>
 <text x="436" y="330" class="ax-tb">Identity middleware</text>
 <text x="436" y="349" class="ax-tm">internal/api/middleware.go · withIdentity</text>
-<text x="436" y="374" class="ax-t">auth.Verify on every request:</text>
-<text x="436" y="392" class="ax-t">chain to CA pool, EKU clientAuth</text>
+<text x="436" y="374" class="ax-t">TLSState.Verify on every request:</text>
+<text x="436" y="392" class="ax-t">chain to CA pool, CRL, EKU clientAuth</text>
 <text x="436" y="410" class="ax-t">identity = leaf Common Name</text>
 <text x="436" y="428" class="ax-t">failure: audit rejected, then 401</text>
 <text x="436" y="446" class="ax-t">no cert + anonymous /health: pass</text>
@@ -48,7 +50,7 @@
 <text x="816" y="349" class="ax-tm">internal/api/handlers.go · server.go</text>
 <text x="816" y="374" class="ax-t">name regex, then IsAllowed (default-deny)</text>
 <text x="816" y="392" class="ax-t">body ≤ 64 KiB, strict JSON, ≤ 64 params</text>
-<text x="816" y="410" class="ax-t">owner-only job status and logs</text>
+<text x="816" y="410" class="ax-t">owner-only, still-allowed job reads</text>
 <text x="816" y="428" class="ax-t">POST /v1/actions/{action}</text>
 <text x="816" y="446" class="ax-t">GET /v1/jobs/{id}[/logs] · GET /health</text>
 <rect x="1180" y="304" width="360" height="200" rx="8" class="ax-box ax-box-agent"/>
@@ -58,7 +60,7 @@
 <text x="1196" y="392" class="ax-t">slot cap → 429, shutdown → 503</text>
 <text x="1196" y="410" class="ax-t">accepted audit, then async run()</text>
 <text x="1196" y="428" class="ax-t">started audit before executor.Run</text>
-<text x="1196" y="446" class="ax-t">in-memory store, bounded history</text>
+<text x="1196" y="446" class="ax-t">bounded history, optional state file</text>
 <path d="M390,404 H420" class="ax-l-ctl" marker-end="url(#intl-m-ctl)"/>
 <path d="M770,404 H800" class="ax-l-ctl" marker-end="url(#intl-m-ctl)"/>
 <path d="M1150,404 H1180" class="ax-l-ctl" marker-end="url(#intl-m-ctl)"/>
@@ -69,7 +71,7 @@
 <text x="56" y="674" class="ax-t">identities → allowlists, actions, limits</text>
 <text x="56" y="692" class="ax-t">parameter patterns compiled as ^(?:…)$</text>
 <text x="56" y="710" class="ax-t">script, cert, key, ancestor integrity</text>
-<text x="56" y="728" class="ax-t">identities, certs reload on SIGHUP</text>
+<text x="56" y="728" class="ax-t">identities, certs, CRL reload live</text>
 <rect x="560" y="586" width="480" height="168" rx="8" class="ax-box ax-box-aud"/>
 <text x="576" y="612" class="ax-tb">Audit subsystem</text>
 <text x="576" y="631" class="ax-tm">internal/audit/audit.go · Logger.Write</text>
@@ -110,7 +112,7 @@
 <text x="56" y="980" class="ax-tmb">audit/syslog_unix.go</text>
 <text x="330" y="980" class="ax-t">journald / syslog sink, facility AUTH</text>
 <text x="56" y="1005" class="ax-tmb">cmd/axiom/main_unix.go</text>
-<text x="330" y="1005" class="ax-t">signal-driven context</text>
+<text x="330" y="1005" class="ax-t">stop signals; SIGHUP reloads</text>
 <rect x="800" y="830" width="740" height="200" rx="8" class="ax-box"/>
 <text x="816" y="854" class="ax-tb">WINDOWS</text>
 <text x="816" y="880" class="ax-tmb">launch_windows.go</text>
@@ -122,7 +124,7 @@
 <text x="816" y="955" class="ax-tmb">winsec_windows.go</text>
 <text x="1090" y="955" class="ax-t">owner, DACL and reparse-point checks</text>
 <text x="816" y="980" class="ax-tmb">audit/eventlog_windows.go</text>
-<text x="1090" y="980" class="ax-t">Application event log sink, IDs 101-104</text>
+<text x="1090" y="980" class="ax-t">Application event log sink, IDs 101-106</text>
 <text x="816" y="1005" class="ax-tmb">service_windows.go</text>
-<text x="1090" y="1005" class="ax-t">SCM service, recovery, event log</text>
+<text x="1090" y="1005" class="ax-t">SCM service, recovery, paramchange reload</text>
 </svg>

@@ -7,7 +7,7 @@ stateDiagram-v2
     queued --> cancelled: agent stopping before start
     running --> succeeded: exit code 0
     running --> failed: non-zero exit, timeout, start error, panic
-    running --> cancelled: shutdown cancels the job
+    running --> cancelled: shutdown cancels the job, or a crash with state_path set
     succeeded --> [*]
     failed --> [*]
     cancelled --> [*]
