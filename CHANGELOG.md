@@ -8,6 +8,13 @@ backward-compatible additions bump minor; fixes bump patch.
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-11-27
+
+Minor release. The new setting is optional and off by default. One behaviour
+is stricter: a certificate whose identity a reload removed, or narrowed, can no
+longer read the jobs it ran for the actions it lost (see Changed). A single-list
+CRL file and an unchanged configuration behave as before.
+
 ### Added
 - **Rejection record cap.** Optional `audit.max_rejections_per_minute`
   (0-10000, default 0 = off). Every rejected request (`401`, `403`) writes and
@@ -43,6 +50,10 @@ backward-compatible additions bump minor; fixes bump patch.
 - `systemctl reload` and `sc.exe control ... paramchange` only report that the
   signal was delivered; the docs now say to read the outcome from the audit or
   service log.
+- Rolling back to v2.2.0 needs `audit.max_rejections_per_minute` removed from
+  the configuration first, and a CRL file reduced to one list: v2.2.0 reads
+  only the first PEM block, so further lists would be silently ignored
+  (INSTALL.md §14).
 
 ### Validated
 - The shipped systemd unit on Ubuntu 24.04 (WSL2, real systemd), installed with

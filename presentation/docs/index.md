@@ -11,7 +11,7 @@ title: Architecture presentation
 <p class="ax-lede">Axiom lets a trusted CI system trigger predefined actions on a server over mutual TLS, without giving it SSH. This presentation places the agent in an illustrative banking estate, then opens it up and follows one request through the Go implementation.</p>
 
 <div class="ax-facts">
-<div><p class="k">Release described</p><p class="v">v2.2.0, source at the release tag</p></div>
+<div><p class="k">Release described</p><p class="v">v2.3.0, source at the release tag</p></div>
 <div><p class="k">Platforms</p><p class="v">Linux (systemd), Windows (service)</p></div>
 <div><p class="k">API surface</p><p class="v">Four HTTP routes</p></div>
 <div><p class="k">Outbound connections</p><p class="v">None made by Axiom</p></div>

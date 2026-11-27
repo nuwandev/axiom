@@ -400,6 +400,12 @@ since it's environment-specific) so a rollback is "redeploy the previous
 file," the same as any other config-as-code rollback — Axiom itself keeps
 no "previous config" on disk.
 
+Rolling back from v2.3.0 to v2.2.0 needs `audit.max_rejections_per_minute`
+removed from the configuration (v2.2.0 rejects unknown keys, so the service
+will not start), and a `security.mtls.crl_file` that holds more than one CRL
+reduced to a single list: v2.2.0 reads only the first PEM block and silently
+ignores the rest.
+
 Rolling back from v2.2.0 to v2.1.0 needs the configuration put back if it uses
 any of `security.mtls.crl_file`, `agent.listen.max_connections`,
 `jobs.idempotency_window` or `jobs.state_path`: v2.1.0 rejects unknown keys,
