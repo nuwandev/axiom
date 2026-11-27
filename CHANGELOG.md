@@ -8,6 +8,21 @@ backward-compatible additions bump minor; fixes bump patch.
 
 ## [Unreleased]
 
+### Validated
+- The Windows service path on Windows 11 Pro with the v2.3.0 code, installed
+  with `Install-Axiom.ps1` (17 of 17 checks):
+  - `sc.exe control axiom paramchange` added an identity with the same process,
+    while an exclusive job kept running and later succeeded;
+  - a restart-only change was refused and the service kept serving on its
+    original port;
+  - after `Stop-Process -Force`, the service manager's recovery restarted it and
+    `jobs.state_path` restored the finished job, marked the running one
+    `cancelled` (interrupted) and answered `410` for its logs;
+  - `reloaded` and `reload_failed` were audited and written to the Application
+    event log as IDs 105 and 106.
+
+  The event-log sink is still not run on Windows Server 2022.
+
 ## [2.3.0] — 2026-11-27
 
 Minor release. The new setting is optional and off by default. One behaviour
